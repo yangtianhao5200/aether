@@ -23,13 +23,16 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -131,6 +134,16 @@ class RemoteAetherClient(
 
     /** `srv_process_output` / `srv_process_exit` events for server-side processes. */
     val processEvents: SharedFlow<JsonObject> = _processEvents.asSharedFlow()
+
+    /**
+     * Bridge frames encoded exactly as the local bridge prints them: one
+     * compact JSON document per line, terminated with `\n`.
+     *
+     * Android consumes this instead of [frames] so the app module does not need
+     * kotlinx-serialization on its classpath.
+     */
+    fun bridgeFrameLines(): Flow<String> =
+        frames.filter { it.isBridgeFrame() }.map { it.toString() + "\n" }
 
     private val _state = MutableStateFlow(RemoteAgentConnectionState.Idle)
     val state: StateFlow<RemoteAgentConnectionState> = _state.asStateFlow()

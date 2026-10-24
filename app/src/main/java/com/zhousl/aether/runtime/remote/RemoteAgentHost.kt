@@ -12,10 +12,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.contentOrNull
 
 /** UI-facing connection snapshot for the remote agent settings screen. */
 data class RemoteAgentUiStatus(
@@ -38,8 +34,6 @@ data class RemoteAgentUiStatus(
 class RemoteAgentHost(
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
 ) {
-    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
-
     @Volatile
     private var config: RemoteAgentConfig = RemoteAgentConfig()
 
@@ -124,8 +118,6 @@ class RemoteBridgeProcess(
     private val client: RemoteAetherClient,
     private val scope: CoroutineScope,
 ) : Process() {
-    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
-
     private val stdoutPipe = PipedInputStream(StdoutBufferBytes)
     private val stdoutSink = PipedOutputStream(stdoutPipe)
     private val stderrPipe = PipedInputStream(StderrBufferBytes)
@@ -146,9 +138,9 @@ class RemoteBridgeProcess(
     init {
         readerJob = scope.launch {
             try {
-                client.frames.collect { frame ->
-                    if (!frame.isBridgeFrame()) return@collect
-                    val line = json.encodeToString(JsonObject.serializer(), frame) + "\n"
+                // The shared client hands us the bridge frames already encoded as
+                // the newline-delimited JSON the local bridge would print.
+                client.bridgeFrameLines().collect { line ->
                     stdoutSink.write(line.encodeToByteArray())
                     stdoutSink.flush()
                 }
@@ -243,10 +235,3 @@ class RemoteBridgeProcess(
         const val StdinBufferBytes = 1 shl 16
     }
 }
-
-private fun JsonObject.isBridgeFrame(): Boolean = when (frameType()) {
-    "response", "error", "event" -> true
-    else -> false
-}
-
-private fun JsonObject.frameType(): String? = (this["type"] as? JsonPrimitive)?.contentOrNull
