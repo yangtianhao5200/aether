@@ -696,7 +696,7 @@ class PiKernelBridge(
     private suspend fun ensureStartedLocked(
         onSetupProgress: (PiCoreSetupUpdate) -> Unit = {},
     ): ActivePiBridgeProcess {
-        mutex.withLock {
+        return mutex.withLock {
             diagnosticLogger.event(
                 category = "pi_bridge",
                 event = "ensure_started_locked_enter",
@@ -814,7 +814,7 @@ class PiKernelBridge(
                     "process_generation" to startedProcess.generation,
                 ),
             )
-            return startedProcess
+            return@withLock startedProcess
         }
     }
 

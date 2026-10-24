@@ -332,6 +332,7 @@ fun AetherApp(
                                 uiState = uiState,
                                 language = effectiveLanguage,
                                 nativeModState = nativeModState,
+                                remoteAgentStatus = remoteAgentStatus,
                                 onNotificationPermissionRequested = onNotificationPermissionRequested,
                                 drawerOpenedEventRegistered =
                                     "drawer.opened" in extensionState.snapshot.eventNames,
@@ -424,6 +425,7 @@ private fun AetherAppContent(
     uiState: AetherUiState,
     language: AppLanguage,
     nativeModState: AetherNativeModState,
+    remoteAgentStatus: com.zhousl.aether.runtime.remote.RemoteAgentUiStatus,
     onNotificationPermissionRequested: () -> Unit,
     drawerOpenedEventRegistered: Boolean,
     onDrawerOpened: () -> Unit,

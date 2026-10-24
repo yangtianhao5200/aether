@@ -686,6 +686,8 @@ fun SettingsScreen(
         pageStateHolder.SaveableStateProvider(pageStateKey) {
             when (targetPage) {
             SettingsPage.Hub -> SettingsHub(
+                remoteAgentConfig = remoteAgentConfig,
+                remoteAgentStatus = remoteAgentStatus,
                 generalSettingsSummary = settingsGeneralSummary(
                     language = languageValue,
                     themeMode = themeModeValue,
@@ -1267,6 +1269,8 @@ fun SettingsScreen(
 @Composable
 private fun SettingsHub(
     generalSettingsSummary: String,
+    remoteAgentConfig: com.zhousl.aether.data.RemoteAgentConfig,
+    remoteAgentStatus: com.zhousl.aether.runtime.remote.RemoteAgentUiStatus,
     activeProviderName: String,
     systemPromptSnippet: String,
     reliabilitySummary: String,
