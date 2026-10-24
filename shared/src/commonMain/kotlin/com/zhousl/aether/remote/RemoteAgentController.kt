@@ -15,7 +15,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withTimeout
-import kotlinx.serialization.json.JsonObject
 
 data class RemoteConnectionTestResult(
     val ok: Boolean,
@@ -192,6 +191,3 @@ suspend fun testRemoteAgentConnection(
         client.dispose()
     }
 }
-
-internal fun JsonObject.remoteString(name: String): String =
-    (this[name] as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull.orEmpty()

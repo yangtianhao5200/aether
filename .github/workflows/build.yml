@@ -69,12 +69,15 @@ jobs:
       - name: Install SDK packages
         run: |
           yes | sdkmanager --licenses > /dev/null || true
+          # app compiles against SDK 36; terminal-* uses ndkVersion from
+          # gradle.properties (27.2.12479018) with ndk-build.
           sdkmanager \
             "platform-tools" \
             "platforms;android-35" \
+            "platforms;android-36" \
             "build-tools;35.0.0" \
-            "ndk;27.0.12077973" \
-            "cmake;3.22.1"
+            "build-tools;36.0.0" \
+            "ndk;27.2.12479018"
 
       - name: Build Pi bridge bundle
         working-directory: pi-bridge
