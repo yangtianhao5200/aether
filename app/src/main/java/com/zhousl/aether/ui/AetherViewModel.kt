@@ -271,7 +271,11 @@ class AetherViewModel(
                 runtime.alpineRuntime.setEnvironmentVariables(settings.alpineEnvironmentVariables)
                 if (!didRefreshAlpineAfterSettingsLoad) {
                     didRefreshAlpineAfterSettingsLoad = true
-                    refreshAlpineSetup(startPiIfReady = false)
+                    // Remote-only: the local Alpine runtime is neither inspected
+                    // nor provisioned while the agent runs on a server.
+                    if (!settings.remoteAgent.isConfigured) {
+                        refreshAlpineSetup(startPiIfReady = false)
+                    }
                 }
                 if (!didEvaluateStartupUpdateCheck && settings.privacyPolicyAccepted) {
                     didEvaluateStartupUpdateCheck = true
