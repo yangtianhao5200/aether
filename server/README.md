@@ -123,6 +123,40 @@ plugins:
 dsh plugin --profile web add /path/to/aether/server
 ```
 
+### Run the agent on DeepSeek Harness instead of Pi
+
+`src/dsh-bridge/` implements the same bridge protocol on top of
+`dsh --profile acp` (Agent Client Protocol over JSON-RPC stdio). Start the
+server with `AETHER_RUNTIME=dsh` and the app keeps working unchanged:
+
+```bash
+AETHER_RUNTIME=dsh \
+DEEPSEEK_API_KEY=sk-... \
+aether-server --host 0.0.0.0 --port 8787
+```
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `AETHER_RUNTIME` | `pi` | `pi` (Pi coding agent) or `dsh` (DeepSeek Harness) |
+| `AETHER_DSH_HOME` | `$DSH_HOME` | Harness home holding profiles and credentials |
+| `AETHER_DSH_ARGS` | `--profile acp` | Arguments passed to the harness launcher |
+| `AETHER_DSH_BRIDGE` | `<package>/bin/dsh-bridge.mjs` | Bridge script override |
+
+What the mapping carries:
+
+| ACP update | Bridge event |
+|---|---|
+| `agent_message_chunk` | `assistant_text_delta` |
+| `agent_thought_chunk` | `assistant_reasoning_delta` |
+| `tool_call` / `tool_call_update` | `tool_call_start` / `tool_call_delta` / `tool_call_end` |
+| `usage_update` | `context_usage` |
+| `PromptResponse.usage` | turn usage in `assistant_done` |
+
+`list_providers` is built from the ACP `model` config option, so the app's model
+picker shows the harness models and `reasoning_effort` maps to the harness
+thinking levels. Permission prompts are auto-approved with the harness's own
+`allow_*` option; add an approval policy there if the deployment needs one.
+
 ## Tests
 
 ```bash
@@ -130,7 +164,8 @@ npm test          # node --test tests/*.test.mjs
 ```
 
 The suite covers authentication, the hello handshake, path jailing, exec
-streaming, process streaming, journal replay, the HTTP API, bridge restarts, and
+streaming, process streaming, journal replay, the HTTP API, bridge restarts,
+the DeepSeek Harness bridge (catalog, streaming turn, unsupported methods) and
 one **end-to-end agent turn** driven by the Pi bridge's deterministic `faux`
 provider — including a `bash` tool call that writes a file inside the server
 workspace, plus prefix reads for large files.

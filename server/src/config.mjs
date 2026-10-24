@@ -33,6 +33,12 @@ export const defaultBridgePath = firstExisting([
   path.join(packageRoot, "bridge", "bridge.mjs"),
 ]);
 
+/**
+ * Bridge that drives a DeepSeek Harness agent (`dsh --profile acp`) instead of
+ * the Pi coding agent. Selected with `AETHER_RUNTIME=dsh` (or `--runtime dsh`).
+ */
+export const defaultDshBridgePath = path.join(packageRoot, "bin", "dsh-bridge.mjs");
+
 const USAGE = `Aether remote server
 
 Usage: aether-server [options]
@@ -79,7 +85,13 @@ export function loadConfig(argv = process.argv.slice(2), env = process.env, cwd 
     host: env.AETHER_HOST?.trim() || "127.0.0.1",
     port: env.AETHER_PORT ? Number(env.AETHER_PORT) : 8787,
     dataDir: env.AETHER_DATA_DIR?.trim() || path.join(cwd, "data"),
-    bridgePath: env.AETHER_BRIDGE?.trim() || defaultBridgePath,
+    runtime: env.AETHER_RUNTIME?.trim() || "pi",
+    bridgePath:
+      env.AETHER_BRIDGE?.trim() ||
+      (env.AETHER_RUNTIME?.trim() === "dsh" ? defaultDshBridgePath : defaultBridgePath),
+    dshBridgePath: env.AETHER_DSH_BRIDGE?.trim() || defaultDshBridgePath,
+    dshHome: env.AETHER_DSH_HOME?.trim() || env.DSH_HOME?.trim() || "",
+    dshArgs: env.AETHER_DSH_ARGS?.trim() || "--profile acp",
     nodePath: env.AETHER_NODE?.trim() || process.execPath,
     noAuth: env.AETHER_NO_AUTH === "1" || env.AETHER_NO_AUTH === "true",
     idleTimeoutMinutes: env.AETHER_IDLE_TIMEOUT_MINUTES

@@ -23,11 +23,12 @@ export const STARTUP_PING_ID = "aether-server-startup-ping";
  *   exit   ({code, signal})
  */
 export class BridgeHost extends EventEmitter {
-  constructor({ workspace, bridgePath, nodePath = process.execPath, log = () => {} }) {
+  constructor({ workspace, bridgePath, nodePath = process.execPath, extraEnv = {}, log = () => {} }) {
     super();
     this.workspace = workspace;
     this.bridgePath = bridgePath;
     this.nodePath = nodePath;
+    this.extraEnv = extraEnv;
     this.log = log;
     this.child = null;
     this.starting = null;
@@ -94,6 +95,8 @@ export class BridgeHost extends EventEmitter {
       XDG_CONFIG_HOME: path.join(this.workspace.home, ".config"),
       XDG_CACHE_HOME: path.join(this.workspace.home, ".cache"),
       XDG_DATA_HOME: path.join(this.workspace.home, ".local", "share"),
+      AETHER_WORKSPACE_DIR: this.workspace.workspace,
+      ...this.extraEnv,
     };
 
     const child = spawn(this.nodePath, [this.bridgePath], {

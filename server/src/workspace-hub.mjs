@@ -33,6 +33,13 @@ export class WorkspaceHub {
       workspace,
       bridgePath: config.bridgePath,
       nodePath: config.nodePath,
+      extraEnv: config.runtime === "dsh"
+        ? {
+            AETHER_DSH_HOME: config.dshHome ?? "",
+            AETHER_DSH_ARGS: config.dshArgs ?? "--profile acp",
+            AETHER_DSH_NODE: config.nodePath,
+          }
+        : {},
       log,
     });
     this.bridge.on("frame", (frame) => this.#onBridgeFrame(frame));
