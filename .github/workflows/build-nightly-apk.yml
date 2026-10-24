@@ -1,23 +1,11 @@
 name: Build Nightly APK
 
+# This fork has no NIGHTLY_KEYSTORE_* secrets, so the signed nightly build is
+# manual-only here. The per-push build lives in `.github/workflows/build.yml`.
 on:
+  # Manual only in this fork: the signed nightly build needs
+  # NIGHTLY_KEYSTORE_* secrets. Every push is covered by build.yml.
   workflow_dispatch:
-  push:
-    branches: [ main ]
-    paths:
-      - 'app/**'
-      - 'shared/**'
-      - 'extensions/**'
-      - 'pi-bridge/**'
-      - 'packages/extension-api/**'
-      - 'third_party/termux/terminal-emulator/**'
-      - 'third_party/termux/terminal-view/**'
-      - 'build.gradle.kts'
-      - 'settings.gradle.kts'
-      - 'gradle.properties'
-      - 'gradle/**'
-      - 'gradlew'
-      - '.github/workflows/build-nightly-apk.yml'
 
 permissions:
   contents: read

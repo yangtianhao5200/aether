@@ -33,7 +33,7 @@ jobs:
       - name: Build Pi bridge bundle
         working-directory: pi-bridge
         run: |
-          npm ci
+          npm install --ignore-scripts --legacy-peer-deps --include=dev --no-audit --no-fund
           npm run build
 
       - name: Run server tests
@@ -62,7 +62,9 @@ jobs:
           cache-dependency-path: pi-bridge/package-lock.json
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
 
       - name: Install SDK packages
         run: |
@@ -77,8 +79,10 @@ jobs:
       - name: Build Pi bridge bundle
         working-directory: pi-bridge
         run: |
-          npm ci
+          npm install --ignore-scripts --legacy-peer-deps --include=dev --no-audit --no-fund
           npm run build
+          # Keep the committed lock so the Gradle task stays up-to-date.
+          git checkout -- package-lock.json || true
 
       - name: Cache Gradle
         uses: actions/cache@v4
