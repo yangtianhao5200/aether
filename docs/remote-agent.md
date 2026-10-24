@@ -204,6 +204,43 @@ dsh plugin --profile web add /path/to/Aether/server
 挂载后手机端配置方式与独立运行完全一致（地址 + 令牌 + 工作区）。Harness 内的
 其它插件可以通过 `ctx.get('aetherRemoteServer')` 拿到服务器实例。
 
+### 5.1 让 Agent 本身跑在 DeepSeek Harness 上
+
+默认的桥接包跑的是 Pi 编码 Agent。如果想让 Agent 直接由 DeepSeek Harness
+执行（使用 Harness 的模型目录、工具、权限与插件生态），把服务器切到 `dsh`
+运行时即可，手机端不用改任何设置：
+
+```bash
+AETHER_RUNTIME=dsh \
+DEEPSEEK_API_KEY=sk-... \
+aether-server --host 0.0.0.0 --port 8787
+```
+
+| 环境变量 | 默认值 | 说明 |
+|---|---|---|
+| `AETHER_RUNTIME` | `pi` | `pi` 或 `dsh` |
+| `AETHER_DSH_HOME` | `$DSH_HOME` | Harness 主目录（含 profile 与凭据） |
+| `AETHER_DSH_ARGS` | `--profile acp` | 传给 Harness 启动器的参数 |
+| `AETHER_DSH_BRIDGE` | `<包>/bin/dsh-bridge.mjs` | 桥接脚本路径 |
+
+原理：`server/src/dsh-bridge/` 用 ACP（Agent Client Protocol，JSON-RPC stdio）
+驱动 `dsh --profile acp`，再把 Harness 的事件翻译成手机端已经在用的桥接协议：
+
+| Harness（ACP）事件 | 手机端收到的事件 |
+|---|---|
+| `agent_message_chunk` | `assistant_text_delta` |
+| `agent_thought_chunk` | `assistant_reasoning_delta` |
+| `tool_call` / `tool_call_update` | `tool_call_start` / `tool_call_delta` / `tool_call_end` |
+| `usage_update` | `context_usage` |
+| `PromptResponse.usage` | 本轮用量（`assistant_done`） |
+
+模型列表来自 Harness 的 `model` 配置项，手机端的模型选择、思考强度
+（`reasoning_effort`）都会同步过去；权限请求默认选 Harness 的 `allow_*` 选项，
+需要人工审批时应在 Harness 侧配置策略。
+
+> 注意：ACP 只承载标准语义（文本、思考、工具调用、用量）。Harness 网页端特有的
+> 计划/待办卡片不在 ACP 里，手机端目前显示为普通工具卡片。
+
 ---
 
 ## 6. 数据与备份
