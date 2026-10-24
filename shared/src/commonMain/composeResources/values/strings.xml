@@ -987,6 +987,26 @@
     <string name="alpine_runtime_title">Alpine Runtime</string>
     <string name="about_title">About</string>
     <string name="runtime_error">Local runtime unavailable</string>
+    <!-- Remote agent onboarding (remote-first first run) -->
+    <string name="onboarding_remote_title">Connect your agent</string>
+    <string name="onboarding_remote_subtitle">Aether runs on your own server. Enter the address and token you got from aether-server to continue.</string>
+    <string name="onboarding_remote_hint">The agent, its tools and your files all live on the server — this app connects, streams and steers the work.</string>
+    <string name="onboarding_remote_url_label">Server address</string>
+    <string name="onboarding_remote_url_placeholder">192.168.1.10:8787 or https://agent.example.com</string>
+    <string name="onboarding_remote_token_label">Access token</string>
+    <string name="onboarding_remote_token_placeholder">Token from the server</string>
+    <string name="onboarding_remote_workspace_label">Workspace</string>
+    <string name="onboarding_remote_workspace_placeholder">default</string>
+    <string name="onboarding_remote_test">Test connection</string>
+    <string name="onboarding_remote_testing">Testing…</string>
+    <string name="onboarding_remote_test_ok">Connected</string>
+    <string name="onboarding_remote_test_failed">Failed</string>
+    <string name="onboarding_remote_continue">Connect and continue</string>
+    <string name="onboarding_remote_invalid">Enter the server address and token to continue.</string>
+    <string name="chat_remote_required_title">Connect your agent</string>
+    <string name="chat_remote_required_body">Aether runs on a remote host. Add your server address and access token to start a conversation.</string>
+    <string name="chat_remote_required_action">Connect</string>
+
     <string name="get_started">Get started</string>
     <string name="skip_label">Skip</string>
     <string name="close_label">Close</string>

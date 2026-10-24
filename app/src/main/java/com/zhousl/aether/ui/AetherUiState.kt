@@ -31,6 +31,7 @@ enum class AppScreen {
 
 enum class OnboardingStep {
     Landing,
+    RemoteAgent,
     ProviderSetup,
     TermuxSetup,
     LocalRuntimeChoice,

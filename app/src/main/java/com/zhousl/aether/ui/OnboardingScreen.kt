@@ -137,7 +137,7 @@ private const val SetupProgressTickMillis = 450L
 private val TourEasing = CubicBezierEasing(0.22f, 0.84f, 0.18f, 1f)
 private val InitialOnboardingSteps = listOf(
     OnboardingStep.Landing,
-    OnboardingStep.AlpineSetup,
+    OnboardingStep.RemoteAgent,
     OnboardingStep.ProviderSetup,
 )
 private val FollowUpOnboardingSteps = listOf(
@@ -193,6 +193,10 @@ fun OnboardingScreen(
     onClearProviderAuthState: () -> Unit,
     onSkip: () -> Unit,
     onClose: () -> Unit,
+    remoteAgentConfig: com.zhousl.aether.data.RemoteAgentConfig,
+    remoteAgentStatus: com.zhousl.aether.runtime.remote.RemoteAgentUiStatus,
+    onSaveRemoteAgentConfig: (com.zhousl.aether.data.RemoteAgentConfig) -> Unit,
+    onTestRemoteAgentConfig: (com.zhousl.aether.data.RemoteAgentConfig) -> Unit,
     onCompleteProviderSetup: (LlmProviderConfig) -> Unit,
     onRequestTermuxPermission: () -> Unit,
     onOpenAppPermissions: () -> Unit,
@@ -213,9 +217,13 @@ fun OnboardingScreen(
     var selectedRuntimePath by rememberSaveable(initialStep, replayMode) {
         mutableStateOf<OnboardingStep?>(null)
     }
+    // Remote agent form state; saved only when the user finishes the step.
+    var remoteAgentDraft by remember(remoteAgentConfig) {
+        mutableStateOf(remoteAgentConfig)
+    }
     val isInitialFlow = initialStep == OnboardingStep.Landing ||
-        initialStep == OnboardingStep.ProviderSetup ||
-        initialStep == OnboardingStep.AlpineSetup
+        initialStep == OnboardingStep.RemoteAgent ||
+        initialStep == OnboardingStep.ProviderSetup
     val steps = remember(initialStep) {
         if (isInitialFlow) InitialOnboardingSteps else FollowUpOnboardingSteps
     }
@@ -247,8 +255,27 @@ fun OnboardingScreen(
                 stepIndex = stepIndex,
                 stepCount = steps.size,
                 replayMode = replayMode,
-                onPrimary = { currentStep = OnboardingStep.AlpineSetup },
+                onPrimary = { currentStep = OnboardingStep.RemoteAgent },
                 onSecondary = if (replayMode) onClose else onSkip,
+            )
+
+            OnboardingStep.RemoteAgent -> RemoteAgentStep(
+                stepIndex = stepIndex,
+                stepCount = steps.size,
+                replayMode = replayMode,
+                config = remoteAgentDraft,
+                isTesting = remoteAgentStatus.isTesting,
+                testOk = remoteAgentStatus.testOk,
+                testMessage = remoteAgentStatus.testMessage,
+                onConfigChange = { remoteAgentDraft = it },
+                onTest = { onTestRemoteAgentConfig(remoteAgentDraft) },
+                onComplete = {
+                    if (remoteAgentDraft.isConfigured) {
+                        onSaveRemoteAgentConfig(remoteAgentDraft)
+                        currentStep = OnboardingStep.ProviderSetup
+                    }
+                },
+                onBack = { currentStep = OnboardingStep.Landing },
             )
 
             OnboardingStep.ProviderSetup -> ProviderSetupStep(
@@ -350,6 +377,35 @@ private fun LandingStep(
         replayMode = replayMode,
         onPrimary = onPrimary,
         onSecondary = onSecondary,
+    )
+}
+
+@Composable
+private fun RemoteAgentStep(
+    stepIndex: Int,
+    stepCount: Int,
+    replayMode: Boolean,
+    config: com.zhousl.aether.data.RemoteAgentConfig,
+    isTesting: Boolean,
+    testOk: Boolean?,
+    testMessage: String,
+    onConfigChange: (com.zhousl.aether.data.RemoteAgentConfig) -> Unit,
+    onTest: () -> Unit,
+    onComplete: () -> Unit,
+    onBack: () -> Unit,
+) {
+    com.zhousl.aether.ui.OnboardingRemoteAgentStep(
+        stepIndex = stepIndex,
+        stepCount = stepCount,
+        replayMode = replayMode,
+        config = config,
+        isTesting = isTesting,
+        testOk = testOk,
+        testMessage = testMessage,
+        onConfigChange = onConfigChange,
+        onTest = onTest,
+        onComplete = onComplete,
+        onBack = onBack,
     )
 }
 

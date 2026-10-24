@@ -985,6 +985,26 @@
     <string name="alpine_runtime_title">Alpine 运行环境</string>
     <string name="about_title">关于</string>
     <string name="runtime_error">本地运行环境不可用</string>
+    <!-- 远程 Agent 引导（首次启动流程） -->
+    <string name="onboarding_remote_title">连接你的 Agent</string>
+    <string name="onboarding_remote_subtitle">Aether 运行在你自己的服务器上。输入 aether-server 给你的地址和令牌即可继续。</string>
+    <string name="onboarding_remote_hint">Agent、工具和文件都在服务器上，本机只负责连接、展示和遥控执行。</string>
+    <string name="onboarding_remote_url_label">服务器地址</string>
+    <string name="onboarding_remote_url_placeholder">192.168.1.10:8787 或 https://agent.example.com</string>
+    <string name="onboarding_remote_token_label">访问令牌</string>
+    <string name="onboarding_remote_token_placeholder">服务器上的令牌</string>
+    <string name="onboarding_remote_workspace_label">工作区</string>
+    <string name="onboarding_remote_workspace_placeholder">default</string>
+    <string name="onboarding_remote_test">测试连接</string>
+    <string name="onboarding_remote_testing">测试中…</string>
+    <string name="onboarding_remote_test_ok">已连接</string>
+    <string name="onboarding_remote_test_failed">连接失败</string>
+    <string name="onboarding_remote_continue">连接并继续</string>
+    <string name="onboarding_remote_invalid">请填写服务器地址和访问令牌。</string>
+    <string name="chat_remote_required_title">连接你的 Agent</string>
+    <string name="chat_remote_required_body">Aether 运行在远程主机上。填写服务器地址和访问令牌后即可开始对话。</string>
+    <string name="chat_remote_required_action">连接</string>
+
     <string name="get_started">开始使用</string>
     <string name="skip_label">跳过</string>
     <string name="close_label">关闭</string>
