@@ -908,6 +908,7 @@ private fun AetherAppContent(
                         target = AetherExtensionComponentChatScreen,
                         modifier = Modifier.fillMaxSize(),
                     ) {
+                        if (uiState.settings.remoteAgent.isConfigured) {
                         ConversationScreen(
                     conversationStateKey = uiState.currentSessionId,
                     messages = currentMessages,
@@ -1032,6 +1033,11 @@ private fun AetherAppContent(
                     onDismissStarterPromptHint = viewModel::dismissStarterPromptHint,
                             isSending = isCurrentSessionRunning,
                         )
+                        } else {
+                            com.zhousl.aether.ui.RemoteAgentRequiredContent(
+                                onConnectRemote = viewModel::openOnboardingFromSettings,
+                            )
+                        }
                     }
 
                     AppScreen.Settings -> AetherExtensionComponentHost(
