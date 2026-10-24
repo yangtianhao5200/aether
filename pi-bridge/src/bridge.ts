@@ -197,6 +197,21 @@ interface PendingAetherHostCall {
   timeout: NodeJS.Timeout;
 }
 
+/**
+ * Where the agent's tools actually execute.
+ *
+ * - `alpine`: the bridge runs inside the device's Alpine VM, so local fs/bash
+ *   already operate on the guest filesystem.
+ * - `termux`: the bridge runs on the device host but tools are delegated back to
+ *   the app through `runtime_op_*` frames.
+ * - `server`: the bridge runs on a remote host (aether-server or a DeepSeek
+ *   Harness instance), so local fs/bash operate on the server filesystem.
+ *   Semantically identical to `alpine` for tool execution, but kept distinct so
+ *   the app, session persistence and diagnostics can tell a remote workspace
+ *   apart from an on-device one.
+ */
+type RuntimeKind = "alpine" | "termux" | "server";
+
 interface AgentSessionState {
   sessionId: string;
   configSignature: string;
@@ -205,7 +220,7 @@ interface AgentSessionState {
   skillSignature: string;
   workspaceDirectory: string;
   termuxWorkspaceDirectory: string;
-  runtime: "alpine" | "termux";
+  runtime: RuntimeKind;
   platform: "android" | "ios";
   chromeEnabled: boolean;
   observeComputer: boolean;
@@ -1861,18 +1876,20 @@ const AETHER_HOST_TOOL_NAMES = new Set([
   "agent_display",
 ]);
 
-function runtimeForPayload(payload: JsonObject): "alpine" | "termux" {
+function runtimeForPayload(payload: JsonObject): RuntimeKind {
   const explicit = asString(payload.runtime, asString(payload.runtime_id)).trim().toLowerCase();
   if (explicit === "termux") return "termux";
   if (explicit === "alpine") return "alpine";
-  return asString(payload.platform).trim().toLowerCase() === "ios" ? "alpine" : "alpine";
+  // `server` plus its aliases all mean "the bridge host owns the workspace".
+  if (explicit === "server" || explicit === "remote" || explicit === "cloud") return "server";
+  return "alpine";
 }
 
 function platformForPayload(payload: JsonObject): "android" | "ios" {
   return asString(payload.platform).trim().toLowerCase() === "ios" ? "ios" : "android";
 }
 
-function activeNativeToolNames(runtime: "alpine" | "termux"): string[] {
+function activeNativeToolNames(runtime: RuntimeKind): string[] {
   return runtime === "termux"
     ? ["read", "bash", "edit", "write"]
     : ["read", "bash", "edit", "write", "grep", "find", "ls"];
@@ -2346,6 +2363,8 @@ function applyRuntimeToolResult(payload: JsonObject): void {
   }
   if (!asBoolean(result.ok, false) || asString(result.action) !== "set") return;
   const runtime = asString(result.runtime).trim();
+  // The agent may only move between on-device runtimes; `server` is chosen by
+  // the host and must never be flipped from inside a turn.
   if (runtime !== "alpine" && runtime !== "termux") return;
   state.runtime = runtime;
   state.session.sessionManager.appendCustomEntry("aether_runtime", {
@@ -2754,7 +2773,13 @@ async function createNativeAgentSession(
     );
     if (runtimeEntry?.type === "custom") {
       const persistedRuntime = asString(asObject(runtimeEntry.data).runtime);
-      if (persistedRuntime === "alpine" || persistedRuntime === "termux") runtime = persistedRuntime;
+      if (
+        persistedRuntime === "alpine" ||
+        persistedRuntime === "termux" ||
+        persistedRuntime === "server"
+      ) {
+        runtime = persistedRuntime;
+      }
     }
   }
   const state = {

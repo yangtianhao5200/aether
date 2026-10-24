@@ -119,6 +119,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -209,6 +210,11 @@ class AetherViewModel(
     private var didRefreshAlpineAfterSettingsLoad = false
 
     val uiState: StateFlow<AetherUiState> = _uiState.asStateFlow()
+
+    private val _remoteAgentStatus =
+        MutableStateFlow(com.zhousl.aether.runtime.remote.RemoteAgentUiStatus())
+    val remoteAgentStatus: StateFlow<com.zhousl.aether.runtime.remote.RemoteAgentUiStatus> =
+        _remoteAgentStatus.asStateFlow()
     val transientMessages = _transientMessages.asSharedFlow()
     val showcaseStates = sessionExecutionManager.showcaseStates
 
@@ -2330,6 +2336,54 @@ class AetherViewModel(
 
         if (didUpdate) {
             updatedSessionForPersistence?.let(::persistSessionSnapshot)
+        }
+    }
+
+    fun saveRemoteAgentConfig(config: com.zhousl.aether.data.RemoteAgentConfig) {
+        viewModelScope.launch {
+            val settings = settingsRepository.settings.first()
+            settingsRepository.updateSettings(settings.copy(remoteAgent = config))
+            runtime.remoteAgentHost.applyConfig(config)
+            _remoteAgentStatus.value = _remoteAgentStatus.value.copy(
+                state = if (config.isConfigured) "connecting" else "disabled",
+                lastError = "",
+            )
+            if (config.isConfigured) {
+                runCatching { runtime.remoteAgentHost.connect() }
+                    .onSuccess {
+                        _remoteAgentStatus.value = _remoteAgentStatus.value.copy(
+                            state = "connected",
+                            lastError = "",
+                            workspaceDirectory = runtime.remoteAgentHost.workspaceRootOrNull.orEmpty(),
+                            homeDirectory = runtime.remoteAgentHost.homeDirectoryOrNull.orEmpty(),
+                        )
+                    }
+                    .onFailure { error ->
+                        _remoteAgentStatus.value = _remoteAgentStatus.value.copy(
+                            state = "failed",
+                            lastError = error.message.orEmpty(),
+                        )
+                    }
+            }
+        }
+    }
+
+    fun testRemoteAgentConfig(config: com.zhousl.aether.data.RemoteAgentConfig) {
+        viewModelScope.launch {
+            _remoteAgentStatus.value = _remoteAgentStatus.value.copy(
+                isTesting = true,
+                testOk = null,
+                testMessage = "",
+            )
+            val result = com.zhousl.aether.remote.testRemoteAgentConnection(config)
+            _remoteAgentStatus.value = _remoteAgentStatus.value.copy(
+                isTesting = false,
+                testOk = result.ok,
+                testMessage = result.message,
+                homeDirectory = result.homeDirectory,
+                workspaceDirectory = result.workspaceDirectory,
+                lastError = if (result.ok) "" else result.message,
+            )
         }
     }
 

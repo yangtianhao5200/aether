@@ -198,6 +198,7 @@ class SessionExecutionManager(
     private val piCompletionClient: PiCompletionClient? = null,
     private val piKernelBridge: PiKernelBridge,
     private val piAgentRunner: PiAgentRunner,
+    private val remoteAgentHost: com.zhousl.aether.runtime.remote.RemoteAgentHost? = null,
 ) {
     private val skillRuntimeMirror = SkillRuntimeMirror(runtimeRouter)
     private val currentSettings = MutableStateFlow(AppSettings())
@@ -663,11 +664,15 @@ class SessionExecutionManager(
                 ?: runtimeRouter.runtimeFor(request.settings, null)?.id
                 ?: request.settings.defaultRuntimeId
                 ?: LocalRuntimeId.Alpine
-            val alpineWorkspaceDirectory = runtimeRouter.alpineWorkspaceDirectory()
-            val activeWorkspaceDirectory = if (activeRuntimeId == LocalRuntimeId.Termux) {
-                workspaceDirectory
-            } else {
-                alpineWorkspaceDirectory
+            val remoteWorkspaceDirectory = remoteAgentHost
+                ?.takeIf { it.isActive }
+                ?.workspaceRootOrNull
+            val alpineWorkspaceDirectory =
+                remoteWorkspaceDirectory ?: runtimeRouter.alpineWorkspaceDirectory()
+            val activeWorkspaceDirectory = when {
+                remoteWorkspaceDirectory != null -> remoteWorkspaceDirectory
+                activeRuntimeId == LocalRuntimeId.Termux -> workspaceDirectory
+                else -> alpineWorkspaceDirectory
             }
             val reasoningTraceToolRoutingEnabled = request.settings.supportsVisibleReasoningTrace()
             var providerRequestCheckpoint: ProviderRequestCheckpoint? = null
@@ -707,14 +712,23 @@ class SessionExecutionManager(
                     settings = request.settings,
                 ),
                 workspaceDirectory = alpineWorkspaceDirectory,
-                termuxWorkspaceDirectory = workspaceDirectory,
-                skillPaths = mirroredSkillPaths,
+                termuxWorkspaceDirectory = remoteWorkspaceDirectory ?: workspaceDirectory,
+                runtimeOverride = if (remoteWorkspaceDirectory != null) "server" else null,
+                extensionDirectory = remoteWorkspaceDirectory
+                    ?.let { remoteAgentHost?.extensionDirectoryOrNull },
+                skillPaths = if (remoteWorkspaceDirectory != null) emptyList() else mirroredSkillPaths,
                 activeSkills = resolvedActiveSkills,
                 selfManagementTool = selfManagementTool,
                 agentModeEnabled = request.agentModeEnabled,
                 chromeEnabled = request.chromeEnabled,
                 sessionId = handle.sessionId,
-                sessionFile = agentSessionMetadata?.jsonlPath.orEmpty(),
+                // Remote sessions live on the server: a phone-local JSONL path
+                // would be unwritable there, so let the bridge pick its own.
+                sessionFile = if (remoteWorkspaceDirectory != null) {
+                    ""
+                } else {
+                    agentSessionMetadata?.jsonlPath.orEmpty()
+                },
                 runtimeId = activeRuntimeId,
                 thinkingLevelMap = thinkingLevelMap,
                 isReasoningModel = isReasoningModel,

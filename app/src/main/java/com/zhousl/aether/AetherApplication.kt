@@ -18,6 +18,7 @@ import com.zhousl.aether.data.AetherToolExecutor
 import com.zhousl.aether.data.ChatRepository
 import com.zhousl.aether.data.PiExtensionManager
 import com.zhousl.aether.data.PiExtensionStateRepository
+import com.zhousl.aether.runtime.remote.RemoteAgentHost
 import com.zhousl.aether.data.RootSetupController
 import com.zhousl.aether.data.RuntimeWorkspaceFileBridge
 import com.zhousl.aether.data.ChatStateStore
@@ -122,9 +123,11 @@ class AetherAppRuntime(
         context = application,
         diagnosticLogger = diagnosticLogger,
     )
+    val remoteAgentHost = RemoteAgentHost()
     val piKernelBridge = PiKernelBridge(
         alpineRuntime = alpineRuntime,
         diagnosticLogger = diagnosticLogger,
+        remoteAgentHost = remoteAgentHost,
     )
     val nativeModManager = AetherNativeModManager(
         context = application,
@@ -231,9 +234,29 @@ class AetherAppRuntime(
         piCompletionClient = piCompletionClient,
         piKernelBridge = piKernelBridge,
         piAgentRunner = piAgentRunner,
+        remoteAgentHost = remoteAgentHost,
     )
 
     fun initialize() {
+        appScope.launch {
+            var lastRemoteConfig: com.zhousl.aether.data.RemoteAgentConfig? = null
+            settingsRepository.settings.collect { settings ->
+                val config = settings.remoteAgent
+                if (config == lastRemoteConfig) return@collect
+                lastRemoteConfig = config
+                remoteAgentHost.applyConfig(config)
+                if (config.isConfigured) {
+                    runCatching { remoteAgentHost.connect() }
+                        .onFailure { error ->
+                            diagnosticLogger.event(
+                                category = "remote_agent",
+                                event = "connect_failed",
+                                details = mapOf("error" to (error.message ?: "").take(300)),
+                            )
+                        }
+                }
+            }
+        }
         if (BuildConfig.SHOWCASE_MODE) {
             appScope.launch {
                 val current = settingsRepository.settings.first()

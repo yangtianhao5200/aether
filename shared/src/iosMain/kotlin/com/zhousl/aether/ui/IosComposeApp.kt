@@ -276,6 +276,10 @@ import com.zhousl.aether.data.chatdb.SharedDraftSessionId
 import com.zhousl.aether.data.chatdb.PersistedChatSession
 import com.zhousl.aether.data.chatdb.deriveSharedSessionMetadata
 import com.zhousl.aether.data.chatdb.serializePersistedChatSession
+import com.zhousl.aether.remote.RemoteAgentController
+import com.zhousl.aether.remote.testRemoteAgentConnection
+import com.zhousl.aether.remote.SwitchablePiBridgeTransport
+import com.zhousl.aether.remote.SwitchableRuntime
 import com.zhousl.aether.runtime.MultiplatformLocalRuntime
 import com.zhousl.aether.runtime.RuntimePiBridgeTransport
 import com.zhousl.aether.runtime.RuntimeSetupProgress
@@ -890,26 +894,75 @@ fun IosComposeApp(
         val chatStoppedStatus = stringResource(Res.string.chat_stopped)
         val chatInterruptedStatus = stringResource(Res.string.chat_interrupted)
         val appScope = rememberCoroutineScope()
-        val extensionStateStore = remember(runtime) { SharedExtensionStateStore(runtime) }
-        val bridgeClient = remember(runtime, extensionStateStore) {
+        // Remote agent host: when configured, the same agent loop runs on the
+        // server and the phone only renders the streamed work.
+        val remoteAgent = remember { RemoteAgentController(sharedAppSettings.remoteAgent) }
+        val remoteConfig by remoteAgent.config.collectAsState()
+        val activeRuntime = remember(runtime, remoteAgent) {
+            SwitchableRuntime(
+                local = runtime,
+                remote = remoteAgent.runtime,
+                remoteEnabled = { remoteAgent.useRemote },
+            )
+        }
+        LaunchedEffect(remoteConfig) {
+            remoteAgent.updateConfig(remoteConfig)
+            if (remoteConfig.isConfigured) {
+                // Connect early so server paths are known before the first turn.
+                runSharedAppCatching { remoteAgent.client.connect() }
+            }
+        }
+        val extensionStateStore = remember(activeRuntime) { SharedExtensionStateStore(activeRuntime) }
+        val bridgeClient = remember(activeRuntime, extensionStateStore) {
             SharedPiBridgeClient(
-                transport = RuntimePiBridgeTransport(
-                    runtime = runtime,
-                    nodeArguments = listOf("--max-old-space-size=1024"),
+                transport = SwitchablePiBridgeTransport(
+                    local = RuntimePiBridgeTransport(
+                        runtime = activeRuntime,
+                        nodeArguments = listOf("--max-old-space-size=1024"),
+                    ),
+                    remote = remoteAgent.transport,
+                    remoteEnabled = { remoteAgent.useRemote },
                 ),
                 observeComputer = { IosWorkspaceHost.isDuo.value },
                 extensionLoadOptionsProvider = extensionStateStore::load,
             )
         }
-        val extensionBridgeClient = remember(runtime, extensionStateStore) {
+        val extensionBridgeClient = remember(activeRuntime, extensionStateStore) {
             SharedPiBridgeClient(
                 transport = RuntimePiBridgeTransport(
-                    runtime = runtime,
-                    bridgePath = "/root/.aether/pi-bridge/extension-bridge.mjs",
+                    runtime = activeRuntime,
+                    bridgePath = "${activeRuntime.bridgeDirectory}/extension-bridge.mjs",
                     nodeArguments = listOf("--max-old-space-size=512"),
                 ),
                 extensionLoadOptionsProvider = extensionStateStore::load,
             )
+        }
+        // Switching between the phone and the server must drop the old bridge
+        // process, otherwise the next turn would still talk to the old host.
+        var remoteAgentStatus by remember { mutableStateOf(NativeRemoteAgentStatus()) }
+        LaunchedEffect(remoteAgent) {
+            remoteAgent.client.state.collect { state ->
+                remoteAgentStatus = remoteAgentStatus.copy(
+                    state = state.storageValue,
+                    lastError = remoteAgent.client.lastError.value,
+                )
+            }
+        }
+        LaunchedEffect(remoteAgent.client) {
+            remoteAgent.client.lastError.collect { message ->
+                if (message.isNotBlank()) {
+                    remoteAgentStatus = remoteAgentStatus.copy(lastError = message)
+                }
+            }
+        }
+        var lastRemoteMode by remember { mutableStateOf(remoteAgent.useRemote) }
+        LaunchedEffect(remoteConfig) {
+            val remoteNow = remoteConfig.isConfigured
+            if (remoteNow != lastRemoteMode) {
+                lastRemoteMode = remoteNow
+                runSharedAppCatching { bridgeClient.reset() }
+                runSharedAppCatching { extensionBridgeClient.reset() }
+            }
         }
         val chromeManager = remember(runtime) { SharedChromeManager(runtime, observeComputer = { IosWorkspaceHost.isDuo.value }) }
         val runtimeTools = remember(runtime) { RuntimeHostToolExecutor(runtime) }
@@ -1055,7 +1108,7 @@ fun IosComposeApp(
         LaunchedEffect(runtime, capabilities.scriptExtensions) {
             if (capabilities.scriptExtensions) {
                 // Start restoring an existing iOS runtime while app state is loading.
-                extensionRuntimeReady = runSharedAppCatching { runtime.isReady() }
+                extensionRuntimeReady = runSharedAppCatching { activeRuntime.isReady() }
                     .getOrDefault(false)
             }
         }
@@ -1074,7 +1127,7 @@ fun IosComposeApp(
                     settingsStore = settingsStore,
                     historyStore = historyStore,
                     skillManager = skillManager,
-                    runtime = runtime,
+                    runtime = activeRuntime,
                     bridgeClient = bridgeClient,
                     extensionStateStore = extensionStateStore,
                 )
@@ -1181,7 +1234,7 @@ fun IosComposeApp(
 
         val managementTools = remember(runtime, bridgeClient, skillManager) {
             SharedAgentManagementTools(
-                runtime = runtime,
+                runtime = activeRuntime,
                 bridge = bridgeClient,
                 skillManager = skillManager,
                 settings = { withContext(Dispatchers.Main) { sharedAppSettings } },
@@ -1534,16 +1587,16 @@ fun IosComposeApp(
             }
         }
 
-        LaunchedEffect(route) {
+        LaunchedEffect(route, remoteConfig) {
             if (startupResolved) {
                 settingsStore?.saveUiState(route.name)
             }
             if (route == SharedRoute.Chat) {
-                val runtimeReady = runSharedAppCatching { runtime.isReady() }
+                val runtimeReady = runSharedAppCatching { activeRuntime.isReady() }
                     .getOrDefault(false)
                 if (!runtimeReady) return@LaunchedEffect
                 runSharedAppCatching {
-                    runtime.initialize()
+                    activeRuntime.initialize()
                     skillManager.list()
                 }.onSuccess { skills ->
                     installedSkills.clear()
@@ -2081,13 +2134,14 @@ fun IosComposeApp(
                         config = config,
                         messages = turnMessages,
                         sessionId = target.id,
+                        runtimeId = activeRuntime.bridgeRuntimeId,
                         skillPaths = skillSelection.availableSkills
                             .filter(SharedInstalledSkill::isEnabled)
                             .map(SharedInstalledSkill::guestPath),
                         skillCommand = skillSelection.activeSkills.firstOrNull()?.name.orEmpty(),
                         systemPrompt = buildSharedPiAgentInstructions(
                             configuredPrompt = sharedAppSettings.systemPrompt,
-                            workspaceDirectory = runtime.workspaceRoot,
+                            workspaceDirectory = activeRuntime.workspaceRoot,
                             availableSkills = skillSelection.availableSkills,
                             activeSkills = skillSelection.activeSkills,
                         ),
@@ -2552,7 +2606,7 @@ fun IosComposeApp(
                     val pi = bridgeClient.exportSessionJsonl(state.id)
                     val piPath = pi["exported_path"]?.jsonPrimitive?.contentOrNull.orEmpty()
                     val piJsonl = piPath.takeIf(String::isNotBlank)
-                        ?.let { path -> runCatching { runtime.fileSystem.read(path).decodeToString() }.getOrNull() }
+                        ?.let { path -> runCatching { activeRuntime.fileSystem.read(path).decodeToString() }.getOrNull() }
                     val exported = Json.parseToJsonElement(json).jsonObject.toMutableMap().apply {
                         put("piSession", buildJsonObject {
                             put("sessionId", state.id)
@@ -2755,7 +2809,7 @@ fun IosComposeApp(
                 agentBridgeClient = bridgeClient,
                 extensionManager = extensionManager,
                 extensionStateStore = extensionStateStore,
-                runtime = runtime,
+                runtime = activeRuntime,
                 platformServices = platformServices,
             )
         }
@@ -2858,7 +2912,7 @@ fun IosComposeApp(
                 return@LaunchedEffect
             }
             if (!extensionRuntimeReady &&
-                !runSharedAppCatching { runtime.isReady() }.getOrDefault(false)
+                !runSharedAppCatching { activeRuntime.isReady() }.getOrDefault(false)
             ) {
                 return@LaunchedEffect
             }
@@ -2946,6 +3000,7 @@ fun IosComposeApp(
             operation = nativeOperation,
             piExtensions = nativePiExtensionsState,
             alpine = nativeAlpineState,
+            remoteAgentStatus = remoteAgentStatus,
         )
         SideEffect {
             nativeSettingsHost?.publishSnapshot(
@@ -2962,6 +3017,27 @@ fun IosComposeApp(
                         "update_settings" -> persistResolvedAppSettings(
                             sharedAppSettings.withNativeSettingsPatch(payload),
                         )
+                        "remote_agent_test" -> appScope.launch {
+                            val target = sharedAppSettings.remoteAgent.let { config ->
+                                (payload["remoteAgent"] as? JsonObject)
+                                    ?.let { config.withNativeRemotePatch(it) }
+                                    ?: config
+                            }
+                            remoteAgentStatus = remoteAgentStatus.copy(
+                                testing = true,
+                                testMessage = "",
+                                testOk = null,
+                            )
+                            val result = testRemoteAgentConnection(target)
+                            remoteAgentStatus = remoteAgentStatus.copy(
+                                testing = false,
+                                testOk = result.ok,
+                                testMessage = result.message,
+                                homeDirectory = result.homeDirectory,
+                                workspaceDirectory = result.workspaceDirectory,
+                                bridgeDirectory = result.agentDirectory,
+                            )
+                        }
                         "provider_upsert" -> parseProviderConfigs("[$payloadJson]")
                             .firstOrNull()
                             ?.let(::upsertProviderConfig)
@@ -3208,13 +3284,13 @@ fun IosComposeApp(
                             nativeOperationError = ""
                             runSharedAppCatching {
                                 val picked = platformServices.pickFile(false) ?: return@runSharedAppCatching
-                                val archive = "${runtime.workspaceRoot}/.skill-${platformRandomUuid()}.zip"
-                                runtime.fileSystem.write(archive, picked.bytes)
+                                val archive = "${activeRuntime.workspaceRoot}/.skill-${platformRandomUuid()}.zip"
+                                activeRuntime.fileSystem.write(archive, picked.bytes)
                                 try {
                                     skillManager.installArchive(archive, sourceLabel = picked.name)
                                 } finally {
                                     withContext(NonCancellable) {
-                                        runCatching { runtime.fileSystem.remove(archive) }
+                                        runCatching { activeRuntime.fileSystem.remove(archive) }
                                     }
                                 }
                                 val updated = skillManager.list()
@@ -3590,7 +3666,7 @@ fun IosComposeApp(
         ) { current ->
             when (current) {
                 SharedRoute.Onboarding -> SharedOnboarding(
-                    runtime = runtime,
+                    runtime = activeRuntime,
                     bridgeClient = bridgeClient,
                     platformServices = platformServices,
                     existingProviderConfig = providerConfig,
@@ -3691,7 +3767,7 @@ fun IosComposeApp(
                     composerSessionKey = currentSession.composerKey,
                     messages = messages,
                     pendingTurns = queuedTurns,
-                    runtime = runtime,
+                    runtime = activeRuntime,
                     platformServices = platformServices,
                     availableSkills = installedSkills.filter { it.isEnabled },
                     selectedSkillIds = selectedSkillIds,
@@ -3913,7 +3989,7 @@ fun IosComposeApp(
                                             ?.getUnreferencedWorkspaceFilePathsForDeletedSession(targetSession.id)
                                             .orEmpty()
                                         historyStore?.delete(targetSession.id)
-                                        removeSharedUnreferencedWorkspaceFiles(runtime, unreferencedPaths)
+                                        removeSharedUnreferencedWorkspaceFiles(activeRuntime, unreferencedPaths)
                                     } else {
                                         val unreferencedPaths = historyStore
                                             ?.getUnreferencedWorkspaceFilePathsForDeletedMessages(
@@ -3921,7 +3997,7 @@ fun IosComposeApp(
                                                 messageIds = removedMessageIds,
                                             ).orEmpty()
                                         persistSession(targetSession)
-                                        removeSharedUnreferencedWorkspaceFiles(runtime, unreferencedPaths)
+                                        removeSharedUnreferencedWorkspaceFiles(activeRuntime, unreferencedPaths)
                                     }
                                 }
                             }
@@ -4005,7 +4081,7 @@ fun IosComposeApp(
                             if (IosWorkspaceHost.isDuo.value) com.zhousl.aether.data.AgentComputerStore.remove(selectedId)
                             historyStore?.delete(selectedId)
                             IosAnalytics.capture("conversation deleted")
-                            removeSharedUnreferencedWorkspaceFiles(runtime, unreferencedPaths)
+                            removeSharedUnreferencedWorkspaceFiles(activeRuntime, unreferencedPaths)
                         }
                     },
                     onExportSession = ::exportSession,
@@ -4070,7 +4146,7 @@ fun IosComposeApp(
             )
         } else if (alpineSetupPreviewVisible) {
             RuntimeSetupStep(
-                runtime = runtime,
+                runtime = activeRuntime,
                 bridgeClient = bridgeClient,
                 onBack = { alpineSetupPreviewVisible = false },
                 onClose = { alpineSetupPreviewVisible = false },
@@ -4695,7 +4771,7 @@ private fun SharedOnboarding(
                 ),
             )
             OnboardingStage.Runtime -> RuntimeSetupStep(
-                runtime = runtime,
+                runtime = activeRuntime,
                 bridgeClient = bridgeClient,
                 onBack = { stage = OnboardingStage.Landing },
                 onClose = onClose,
@@ -4958,7 +5034,7 @@ private fun RuntimeSetupStep(
         if (shouldReset) {
             try {
                 bridgeClient.reset()
-                runtime.resetForRetry()
+                activeRuntime.resetForRetry()
             } catch (failure: Throwable) {
                 if (failure is CancellationException) throw failure
                 error = failure.message ?: "AI engine setup failed."
@@ -4969,7 +5045,7 @@ private fun RuntimeSetupStep(
                 return@LaunchedEffect
             }
         }
-        val installed = runSharedAppCatching { runtime.isReady() }.getOrElse { failure ->
+        val installed = runSharedAppCatching { activeRuntime.isReady() }.getOrElse { failure ->
             error = failure.message.orEmpty()
             running = false
             return@LaunchedEffect
@@ -4983,7 +5059,7 @@ private fun RuntimeSetupStep(
                     phase = RuntimePhaseCheckingAlpine,
                     output = progress.output,
                 )
-                runtime.initialize { update ->
+                activeRuntime.initialize { update ->
                     progress = update.copy(phase = normalizeRuntimeSetupPhase(update.phase))
                 }
             }
@@ -5603,7 +5679,7 @@ private fun SharedChatScreen(
                 chromeManager.displayState,
             ) { executions, browser ->
                 com.zhousl.aether.platform.iosComputerSnapshot(
-                    selectedSessionId, runtime.workspaceRoot, runtimeReady, executions, browser,
+                    selectedSessionId, activeRuntime.workspaceRoot, runtimeReady, executions, browser,
                 )
             }.flowOn(Dispatchers.Default).conflate().collect(IosWorkspaceHost::publishComputerSnapshot)
         }
@@ -6025,7 +6101,7 @@ private fun SharedChatScreen(
                                     SharedBrowserPreviewCard(
                                         displayState = browserState,
                                         tool = browserTools.last(),
-                                        runtime = runtime,
+                                        runtime = activeRuntime,
                                         manager = chromeManager,
                                         isLive = message.isStreaming && browserDisplayState.isActive,
                                         replayFrames = browserReplayFrames,
@@ -6059,7 +6135,7 @@ private fun SharedChatScreen(
                                         { onRetryUserMessage(message.id) }
                                     } else null,
                                     onOpenAttachment = { attachment -> previewAttachment = attachment },
-                                    runtime = runtime,
+                                    runtime = activeRuntime,
                                     onOpenLink = { rawLink ->
                                     val target = normalizeSharedMarkdownTarget(rawLink)
                                     if (target.startsWith("data:", ignoreCase = true)) {
@@ -6083,13 +6159,13 @@ private fun SharedChatScreen(
                                         }
                                     } else {
                                         scope.launch {
-                                            val path = resolveSharedWorkspacePath(target, runtime.workspaceRoot)
+                                            val path = resolveSharedWorkspacePath(target, activeRuntime.workspaceRoot)
                                             if (path == null) {
                                                 onTransientMessage(attachmentPreviewFailedMessage)
                                                 return@launch
                                             }
                                             runSharedAppCatching {
-                                                val bytes = runtime.fileSystem.read(path)
+                                                val bytes = activeRuntime.fileSystem.read(path)
                                                 val name = path.substringAfterLast('/').ifBlank { aetherFileName }
                                                 val mimeType = sharedMimeTypeForPath(path)
                                                 platformServices.exportFile(name, mimeType, bytes)
@@ -6175,7 +6251,7 @@ private fun SharedChatScreen(
                         onSteerFollowUp(attachments)
                         dismissKeyboard()
                     },
-                    runtime = runtime,
+                    runtime = activeRuntime,
                     platformServices = platformServices,
                     availableSkills = availableSkills,
                     selectedSkillIds = selectedSkillIds,
@@ -6214,7 +6290,7 @@ private fun SharedChatScreen(
                 previewAttachment?.let { attachment ->
                     SharedAttachmentPreviewDialog(
                         attachment = attachment,
-                        runtime = runtime,
+                        runtime = activeRuntime,
                         onDismiss = { previewAttachment = null },
                         onSave = {
                             scope.launch {
@@ -7038,7 +7114,7 @@ private fun SharedComposer(
             runSharedAppCatching {
                 val selectedFiles = platformServices.pickFiles(imagesOnly)
                 if (selectedFiles.isEmpty()) return@runSharedAppCatching
-                val attachmentsDirectory = "${runtime.workspaceRoot.trimEnd('/')}/attachments"
+                val attachmentsDirectory = "${activeRuntime.workspaceRoot.trimEnd('/')}/attachments"
                 val selectedWithIds = selectedFiles
                     .map { selected -> selected to selected.sharedSourceIdentifier() }
                     .distinctBy { (_, sourceIdentifier) -> sourceIdentifier }
@@ -7071,12 +7147,12 @@ private fun SharedComposer(
                 }
                 pendingIds += pendingAttachments.map { it.second.id }
                 attachments += pendingAttachments.map { it.second }
-                runtime.fileSystem.createDirectories(attachmentsDirectory)
+                activeRuntime.fileSystem.createDirectories(attachmentsDirectory)
                 pendingAttachments.forEach { (selected, pending) ->
                     launch {
                         val startedAtMillis = platformCurrentTimeMillis()
                         runSharedAppCatching {
-                            runtime.fileSystem.writeWithProgress(
+                            activeRuntime.fileSystem.writeWithProgress(
                                 path = pending.workspacePath,
                                 content = selected.bytes,
                             ) { bytesCopied ->
@@ -7216,7 +7292,7 @@ private fun SharedComposer(
                 if (attachments.isNotEmpty()) {
                     SharedComposerAttachmentTray(
                         attachments = attachments,
-                        runtime = runtime,
+                        runtime = activeRuntime,
                         onRemoveAttachment = { attachmentId ->
                             attachments.removeAll { it.id == attachmentId }
                         },
@@ -8796,6 +8872,17 @@ private fun SharedConversationDrawer(
     }
 }
 
+internal data class NativeRemoteAgentStatus(
+    val state: String = "",
+    val lastError: String = "",
+    val testing: Boolean = false,
+    val testOk: Boolean? = null,
+    val testMessage: String = "",
+    val homeDirectory: String = "",
+    val workspaceDirectory: String = "",
+    val bridgeDirectory: String = "",
+)
+
 internal fun buildNativeSettingsSnapshot(
     settings: AppSettings,
     providerConfigs: List<LlmProviderConfig>,
@@ -8814,6 +8901,7 @@ internal fun buildNativeSettingsSnapshot(
     operationError: String = "",
     operation: String = "",
     piExtensions: NativePiExtensionsState = NativePiExtensionsState(),
+    remoteAgentStatus: NativeRemoteAgentStatus = NativeRemoteAgentStatus(),
     alpine: NativeAlpineSettingsState = NativeAlpineSettingsState(
         ready = settings.alpineSetupCompleted,
         issue = if (settings.alpineSetupCompleted) "ready" else "not_installed",
@@ -8869,6 +8957,16 @@ internal fun buildNativeSettingsSnapshot(
         providerModels.forEach { (id, models) ->
             put(id, buildJsonArray { models.forEach { add(JsonPrimitive(it)) } })
         }
+    })
+    put("remoteAgentStatus", buildJsonObject {
+        put("state", remoteAgentStatus.state)
+        put("lastError", remoteAgentStatus.lastError)
+        put("testing", remoteAgentStatus.testing)
+        remoteAgentStatus.testOk?.let { put("testOk", it) }
+        put("testMessage", remoteAgentStatus.testMessage)
+        put("homeDirectory", remoteAgentStatus.homeDirectory)
+        put("workspaceDirectory", remoteAgentStatus.workspaceDirectory)
+        put("bridgeDirectory", remoteAgentStatus.bridgeDirectory)
     })
     put("providerOperation", providerOperation)
     put("providerCompletedRequestId", providerCompletedRequestId)
@@ -9136,6 +9234,20 @@ internal fun AppSettings.withNativeSettingsPatch(patch: JsonObject): AppSettings
     defaultNamingModelKey = patch.nativeStringOrNull("defaultNamingModelKey") ?: defaultNamingModelKey,
     defaultCompactingModelKey = patch.nativeStringOrNull("defaultCompactingModelKey")
         ?: defaultCompactingModelKey,
+    remoteAgent = (patch["remoteAgent"] as? JsonObject)
+        ?.let { remote -> remoteAgent.withNativeRemotePatch(remote) }
+        ?: remoteAgent,
+)
+
+internal fun com.zhousl.aether.data.RemoteAgentConfig.withNativeRemotePatch(
+    patch: JsonObject,
+): com.zhousl.aether.data.RemoteAgentConfig = copy(
+    enabled = patch.nativeBoolean("enabled") ?: enabled,
+    serverUrl = patch.nativeStringOrNull("serverUrl") ?: serverUrl,
+    token = patch.nativeStringOrNull("token") ?: token,
+    workspace = patch.nativeStringOrNull("workspace") ?: workspace,
+    autoReconnect = patch.nativeBoolean("autoReconnect") ?: autoReconnect,
+    fallbackToLocal = patch.nativeBoolean("fallbackToLocal") ?: fallbackToLocal,
 )
 
 private fun JsonObject.nativeString(name: String): String = nativeStringOrNull(name).orEmpty()

@@ -63,6 +63,7 @@ private data class ActivePiBridgeProcess(
 class PiKernelBridge(
     private val alpineRuntime: AlpineRuntime,
     private val diagnosticLogger: AetherDiagnosticLogger = AetherDiagnosticLogger.NoOp,
+    private val remoteAgentHost: RemoteAgentHost? = null,
 ) {
     private val mutex = Mutex()
     private val pendingRequests = ConcurrentHashMap<String, PendingPiBridgeRequest>()
@@ -715,6 +716,33 @@ class PiKernelBridge(
             }
             runCatching { staleProcess?.writer?.close() }
             runCatching { staleProcess?.process?.destroy() }
+
+            // Remote agent host: the same bridge protocol, but the process lives
+            // on the server. Nothing Alpine-side is installed or started.
+            if (remoteAgentHost?.isActive == true) {
+                onSetupProgress(PiCoreSetupUpdate(PiCoreSetupPhase.StartingBridge))
+                remoteAgentHost.connect()
+                val remoteProcess = remoteAgentHost.createBridgeProcess()
+                val remoteStarted = ActivePiBridgeProcess(
+                    process = remoteProcess,
+                    writer = BufferedWriter(OutputStreamWriter(remoteProcess.outputStream, Charsets.UTF_8)),
+                    generation = nextProcessGeneration.incrementAndGet(),
+                )
+                synchronized(processStateLock) {
+                    activeProcess = remoteStarted
+                }
+                startStdoutReader(remoteStarted)
+                startStderrReader(remoteStarted)
+                diagnosticLogger.event(
+                    category = "pi_bridge",
+                    event = "remote_process_started",
+                    details = mapOf(
+                        "workspace" to (remoteAgentHost.workspaceRootOrNull ?: ""),
+                        "process_generation" to remoteStarted.generation,
+                    ),
+                )
+                return@withLock remoteStarted
+            }
 
             diagnosticLogger.event(
                 category = "pi_bridge",

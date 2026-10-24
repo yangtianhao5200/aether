@@ -60,3 +60,9 @@ Thumbs.db
 .DS_Store
 xcuserdata/
 pi-bridge/session-*.jsonl
+
+# Aether remote server data
+server/data/
+server/bridge/
+server/*.tgz
+release/

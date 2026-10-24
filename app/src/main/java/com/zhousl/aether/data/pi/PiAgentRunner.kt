@@ -58,6 +58,8 @@ class PiAgentRunner(
         chromeEnabled: Boolean = false,
         sessionId: String = "",
         sessionFile: String = "",
+        runtimeOverride: String? = null,
+        extensionDirectory: String? = null,
         thinkingLevelMap: Map<String, String> = emptyMap(),
         isReasoningModel: Boolean = true,
         modelsDevThinkingLevels: List<String>? = null,
@@ -134,8 +136,11 @@ class PiAgentRunner(
                     put("termux_workspace_directory", termuxWorkspaceDirectory)
                     // Pi extensions are installed in Alpine's guest home even
                     // when the selected chat runtime is Termux.
-                    put("extension_paths", JSONArray().put(AetherExtensionGuestDirectory))
-                    put("runtime", runtimeId.storageValue)
+                    put(
+                        "extension_paths",
+                        JSONArray().put(extensionDirectory ?: AetherExtensionGuestDirectory),
+                    )
+                    put("runtime", runtimeOverride ?: runtimeId.storageValue)
                     put("platform", "android")
                     put("chrome_enabled", chromeEnabled)
                     put("reasoning", settings.toPiThinkingLevel())

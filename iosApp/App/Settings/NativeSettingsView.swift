@@ -527,7 +527,7 @@ struct NativeSettingsView: View {
 
     private enum SettingsPage: Hashable {
         case general, providers, personalization, reliability, skills, extensions
-        case alpine, statistics, developer, about
+        case alpine, remoteAgent, statistics, developer, about
         case extensionPage(String)
     }
 
@@ -584,6 +584,7 @@ struct NativeSettingsView: View {
                 }
             }
             Section {
+                settingsLink(.remoteAgent, "server.rack", model.text("Remote Agent", "远程 Agent"), remoteAgentSummary)
                 settingsLink(.skills, "puzzlepiece", model.text("Agent Skills", "Agent Skills"), "\(model.skills.count)")
                 settingsLink(.extensions, "shippingbox", model.text("Pi Extensions", "Pi Extensions"), extensionSummary)
                 settingsLink(.alpine, "terminal", "Alpine", alpineSummary)
@@ -614,6 +615,7 @@ struct NativeSettingsView: View {
         case .skills: NativeSkillsSettingsView(model: model)
         case .extensions: NativeExtensionsOverview(model: model)
         case .alpine: NativeAlpineSettingsView(model: model)
+        case .remoteAgent: NativeRemoteAgentSettingsView(model: model)
         case .statistics: NativeStatisticsView(model: model)
         case .developer: NativeDeveloperSettingsView(model: model)
         case .about: NativeAboutSettingsView(model: model)
@@ -658,6 +660,21 @@ struct NativeSettingsView: View {
     private var extensionSummary: String {
         let count = (model.piExtensions["installed"] as? [[String: Any]] ?? []).count
         return model.text("\(count) installed", "已安装 \(count) 个", "\(count) نصب‌شده")
+    }
+
+    private var remoteAgentSummary: String {
+        let remote = model.settings["remoteAgent"] as? [String: Any] ?? [:]
+        guard model.bool(remote, "enabled") else {
+            return model.text("Runs on this device", "在本机运行")
+        }
+        let status = model.snapshot["remoteAgentStatus"] as? [String: Any] ?? [:]
+        switch model.string(status, "state") {
+        case "connected": return model.text("Connected to server", "已连接服务器")
+        case "connecting": return model.text("Connecting…", "连接中…")
+        case "reconnecting": return model.text("Reconnecting…", "重连中…")
+        case "failed": return model.text("Connection failed", "连接失败")
+        default: return model.text("Server configured", "已配置服务器")
+        }
     }
 
     private var alpineSummary: String {
@@ -836,6 +853,143 @@ private struct NativeReliabilitySettingsView: View {
             get: { model.settingInt(key, fallback: range.lowerBound) },
             set: { model.patch([key: min(max($0, range.lowerBound), range.upperBound)]) }
         )
+    }
+}
+
+private struct NativeRemoteAgentSettingsView: View {
+    @ObservedObject var model: NativeSettingsModel
+
+    @State private var serverUrl = ""
+    @State private var token = ""
+    @State private var workspace = ""
+    @State private var loadedDraft = false
+
+    private var remote: [String: Any] { model.settings["remoteAgent"] as? [String: Any] ?? [:] }
+    private var status: [String: Any] { model.snapshot["remoteAgentStatus"] as? [String: Any] ?? [:] }
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle(model.text("Use remote agent host", "使用远程 Agent"), isOn: Binding(
+                    get: { model.bool(remote, "enabled") },
+                    set: { model.patch(["remoteAgent": ["enabled": $0]]) }
+                ))
+            } footer: {
+                Text(model.text(
+                    "When enabled the agent loop runs on the server. Files, bash and every tool execute there, and the work streams back here in real time.",
+                    "开启后 Agent 循环在服务器上运行，文件、bash 与所有工具都在服务器执行，工作内容实时回传到本机。"
+                ))
+            }
+
+            Section {
+                TextField("http://192.168.1.10:8787", text: $serverUrl)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .keyboardType(.URL)
+                SecureField(model.text("Access token", "访问令牌"), text: $token)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                TextField("default", text: $workspace)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+            } header: {
+                Text(model.text("Server", "服务器"))
+            } footer: {
+                Text(model.text(
+                    "Start aether-server on the machine that should run the agent, then paste its URL and token here.",
+                    "在要运行 Agent 的机器上启动 aether-server，然后在这里填写地址与令牌。"
+                ))
+            }
+
+            Section {
+                Button {
+                    model.patch([
+                        "remoteAgent": [
+                            "serverUrl": serverUrl,
+                            "token": token,
+                            "workspace": workspace,
+                        ],
+                    ])
+                } label: {
+                    Label(model.text("Save", "保存"), systemImage: "checkmark.circle")
+                }
+                Button {
+                    model.perform("remote_agent_test", [
+                        "remoteAgent": [
+                            "serverUrl": serverUrl,
+                            "token": token,
+                            "workspace": workspace,
+                        ],
+                    ])
+                } label: {
+                    HStack {
+                        Label(model.text("Test connection", "测试连接"), systemImage: "bolt.horizontal")
+                        if model.bool(status, "testing") {
+                            Spacer()
+                            ProgressView()
+                        }
+                    }
+                }
+                .disabled(model.bool(status, "testing") || serverUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            } footer: {
+                if status["testOk"] != nil {
+                    Text(model.string(status, "testMessage"))
+                        .foregroundStyle(model.bool(status, "testOk") ? Color.green : Color.red)
+                }
+            }
+
+            Section(model.text("Connection", "连接状态")) {
+                LabeledContent(model.text("State", "状态"), value: stateLabel)
+                if !model.string(status, "homeDirectory").isEmpty {
+                    pathRow("HOME", model.string(status, "homeDirectory"))
+                }
+                if !model.string(status, "workspaceDirectory").isEmpty {
+                    pathRow(model.text("Workspace", "工作区"), model.string(status, "workspaceDirectory"))
+                }
+                if !model.string(status, "bridgeDirectory").isEmpty {
+                    pathRow(model.text("Bridge", "桥接目录"), model.string(status, "bridgeDirectory"))
+                }
+                if !model.string(status, "lastError").isEmpty {
+                    Text(model.string(status, "lastError"))
+                        .font(.caption)
+                        .foregroundStyle(Color.red)
+                }
+            }
+        }
+        .navigationTitle(model.text("Remote Agent", "远程 Agent"))
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear { loadDraft() }
+        .onChange(of: model.snapshot.count) { _, _ in
+            if serverUrl.isEmpty && token.isEmpty { loadDraft(force: true) }
+        }
+    }
+
+    private var stateLabel: String {
+        guard model.bool(remote, "enabled") else {
+            return model.text("Disabled", "未启用")
+        }
+        switch model.string(status, "state") {
+        case "connected": return model.text("Connected", "已连接")
+        case "connecting": return model.text("Connecting…", "连接中…")
+        case "reconnecting": return model.text("Reconnecting…", "重连中…")
+        case "failed": return model.text("Failed", "连接失败")
+        default: return model.text("Idle", "空闲")
+        }
+    }
+
+    private func pathRow(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(.caption).foregroundStyle(.secondary)
+            Text(value).font(.caption.monospaced()).textSelection(.enabled)
+        }
+    }
+
+    private func loadDraft(force: Bool = false) {
+        guard force || !loadedDraft else { return }
+        loadedDraft = true
+        serverUrl = model.string(remote, "serverUrl")
+        token = model.string(remote, "token")
+        workspace = model.string(remote, "workspace", fallback: "default")
     }
 }
 

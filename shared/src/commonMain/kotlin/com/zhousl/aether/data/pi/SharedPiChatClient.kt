@@ -160,6 +160,7 @@ class SharedPiChatClient(
         messages: List<SharedPiChatMessage>,
         sessionId: String,
         workspaceDirectory: String = "/workspace",
+        runtimeId: String = "alpine",
         skillPaths: List<String> = emptyList(),
         skillCommand: String = "",
         systemPrompt: String = platformDefaultSystemPrompt(),
@@ -211,7 +212,7 @@ class SharedPiChatClient(
             put("messages", messages.withSkillCommand(skillCommand).toPiMessages())
             put("workspace_directory", workspaceDirectory)
             put("termux_workspace_directory", workspaceDirectory)
-            put("runtime", "alpine")
+            put("runtime", runtimeId)
             put("platform", "ios")
             // Aether owns this workspace; allow Pi to discover project Skills.
             put("workspace_trusted", true)

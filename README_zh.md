@@ -93,6 +93,11 @@ Aether 的 UI 和交互大量参考了 ChatGPT、Codex CLI/App、Gemini、Poco A
 - **扩展主机控制**: 支持可选的 Shizuku 与 Termux 扩展，用于直接操纵和控制手机系统。（仅限 Android）
 
 
+## 🖥️ 远程 Agent
+
+可以把整个 Agent 放到服务器上运行：手机只负责界面与实时同步，文件、命令与工具调用都在服务器工作区执行，能力与本地一致，并支持多设备同时观看/接管。详见 [docs/remote-agent.md](docs/remote-agent.md)。
+
+
 ## 🚀 快速开始
 
 见 <https://aether.baimoqilin.com/docs/quickstart>.

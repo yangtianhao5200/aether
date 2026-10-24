@@ -86,6 +86,7 @@ Aether's UI and interactions are heavily inspired by excellent, mature applicati
 - **Built-in Alpine VM**: Includes an automatically installed Alpine Linux environment to run shell commands and tools out of the box.
 - **System File Manager Access** (Android): After initializing Alpine, select **Aether (Alpine)** in the system Files app or SAF document picker's sidebar to browse the environment and `/workspace`, create, edit, rename, delete, or copy files between Alpine and device storage. Changes apply directly to the files used by proot. System mounts such as `/dev`, `/proc`, and `/sys` are excluded.
 - **Extensible Host Control**: Supports optional Shizuku and Termux integration for direct device manipulation and automation. (Android only)
+- **Remote Agent Host**: Run the whole agent on a server (or inside DeepSeek Harness) instead of on the phone — the app keeps streaming the same live work while files, `bash` and tools execute remotely, with multi-device sync. See [docs/remote-agent.md](docs/remote-agent.md).
 
 
 ## 🚀 Quick Start

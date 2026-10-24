@@ -220,6 +220,8 @@ data class AppSettings(
     val onboardingCompletedVersion: Int = 0,
     val privacyPolicyAccepted: Boolean = false,
     val lastUpdateCheckAtMillis: Long = 0L,
+    /** Remote agent host (aether-server / DeepSeek Harness) configuration. */
+    val remoteAgent: RemoteAgentConfig = RemoteAgentConfig(),
 )
 
 /** Root/Shizuku is only used when the user enables Virtual Display. */

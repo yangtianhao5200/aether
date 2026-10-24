@@ -1,0 +1,37 @@
+{
+  "name": "@aether/remote-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Remote agent host for Aether: runs the Pi bridge on a server and streams agent work to Aether clients in real time.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "main": "src/index.mjs",
+  "exports": {
+    ".": "./src/index.mjs",
+    "./config": "./src/config.mjs",
+    "./dsh": "./src/dsh-plugin.mjs"
+  },
+  "bin": {
+    "aether-server": "bin/aether-server.mjs"
+  },
+  "files": [
+    "bin",
+    "src",
+    "public",
+    "bridge",
+    "README.md"
+  ],
+  "scripts": {
+    "start": "node bin/aether-server.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "test:watch": "node --test --watch tests/*.test.mjs",
+    "prepack": "node scripts/bundle-bridge.mjs",
+    "bundle": "node scripts/bundle-bridge.mjs"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "license": "GPL-3.0-or-later"
+}

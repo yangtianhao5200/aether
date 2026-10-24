@@ -232,6 +232,7 @@ fun AetherApp(
     onNotificationPermissionRequested: () -> Unit = {},
 ) {
     val uiState = viewModel.uiState.collectAsStateWithLifecycle().value
+    val remoteAgentStatus = viewModel.remoteAgentStatus.collectAsStateWithLifecycle().value
     val context = LocalContext.current
     val applicationLanguage = AetherLocaleManager.currentApplicationLanguage()
     val effectiveLanguage = applicationLanguage ?: uiState.settings.language
@@ -1036,6 +1037,8 @@ private fun AetherAppContent(
                     llmInactivityReconnectTimeoutSeconds = uiState.settings.llmInactivityReconnectTimeoutSeconds,
                     keepTasksRunningInBackground = uiState.settings.keepTasksRunningInBackground,
                     notifyOnTaskCompletion = uiState.settings.notifyOnTaskCompletion,
+                    remoteAgentConfig = uiState.settings.remoteAgent,
+                    remoteAgentStatus = remoteAgentStatus,
                     agentWorkspaceMode = uiState.settings.agentWorkspaceMode,
                     autoCleanOldCommandHistory =
                         uiState.settings.autoCleanOldCommandHistory,
@@ -1084,6 +1087,8 @@ private fun AetherAppContent(
                     appUpdate = uiState.appUpdate,
                     onSave = viewModel::saveSettings,
                     onSaveDefaultModelKeys = viewModel::saveDefaultModelKeys,
+                    onSaveRemoteAgentConfig = viewModel::saveRemoteAgentConfig,
+                    onTestRemoteAgentConfig = viewModel::testRemoteAgentConfig,
                     onSaveAgentModeAuthorization = viewModel::saveAgentModeAuthorization,
                     onUpdateLanguage = { language ->
                         viewModel.updateAppLanguage(language)

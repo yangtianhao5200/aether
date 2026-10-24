@@ -14,7 +14,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 class RuntimePiBridgeTransport(
     private val runtime: MultiplatformLocalRuntime,
     private val nodeExecutable: String = "/usr/bin/node",
-    private val bridgePath: String = "/root/.aether/pi-bridge/bridge.mjs",
+    private val bridgePath: String? = null,
     // Extra VM flags for the Node process. Memory-capped on constrained
     // devices so a leaking agent session degrades instead of triggering
     // an OS-level jetsam kill of the whole app.
@@ -30,6 +30,7 @@ class RuntimePiBridgeTransport(
     override suspend fun start(): RuntimeProcess = mutex.withLock {
         activeProcess?.let { return@withLock it }
 
+        val resolvedBridgePath = bridgePath ?: "${runtime.bridgeDirectory}/bridge.mjs"
         check(runtime.isReady()) {
             "Initialize Alpine before starting the agent runtime."
         }
@@ -37,19 +38,19 @@ class RuntimePiBridgeTransport(
         // process. The readiness check above prevents this call from installing
         // Alpine implicitly when agent startup is what reached the bridge.
         runtime.initialize()
-        check(runtime.fileSystem.exists(bridgePath)) {
-            "Pi Bridge is not installed at $bridgePath."
+        check(runtime.fileSystem.exists(resolvedBridgePath)) {
+            "Pi Bridge is not installed at $resolvedBridgePath."
         }
         runtime.startProcess(
             RuntimeProcessSpec(
                 executable = nodeExecutable,
-                arguments = nodeArguments + listOf(bridgePath),
+                arguments = nodeArguments + listOf(resolvedBridgePath),
                 environment = mapOf(
                     "HOME" to runtime.homeDirectory,
                     "AETHER_WORKSPACE" to runtime.workspaceRoot,
                     "NODE_COMPILE_CACHE" to "${runtime.homeDirectory}/.aether/node-compile-cache",
                 ),
-                workingDirectory = bridgePath.substringBeforeLast('/'),
+                workingDirectory = resolvedBridgePath.substringBeforeLast('/'),
             ),
         ).also { started ->
             activeProcess = started

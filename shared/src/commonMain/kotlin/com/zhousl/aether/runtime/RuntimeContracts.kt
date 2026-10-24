@@ -83,6 +83,17 @@ interface MultiplatformLocalRuntime {
     val workspaceRoot: String
     val fileSystem: RuntimeFileSystem
 
+    /**
+     * Runtime id sent to the Pi bridge (`runtime` payload field).
+     *
+     * `alpine` and `termux` execute tools on the device; `server` executes them
+     * on the host that runs the bridge.
+     */
+    val bridgeRuntimeId: String get() = "alpine"
+
+    /** Directory that holds the Pi bridge bundles inside this runtime. */
+    val bridgeDirectory: String get() = "$homeDirectory/.aether/pi-bridge"
+
     suspend fun isReady(): Boolean = fileSystem.exists("/etc/alpine-release")
     suspend fun initialize(onProgress: (RuntimeSetupProgress) -> Unit = {})
     suspend fun resetForRetry() = reset()

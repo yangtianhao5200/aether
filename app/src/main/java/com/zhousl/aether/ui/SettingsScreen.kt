@@ -52,6 +52,7 @@ import androidx.compose.material.icons.rounded.ArrowDropDown
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Cloud
+import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.Delete
@@ -232,6 +233,7 @@ private enum class SettingsPage {
     AlpineFiles,
     AlpineChrome,
     RuntimeDefaults,
+    RemoteAgent,
     AgentMode,
     Statistics,
     VirtualDisplayAuthorization,
@@ -254,6 +256,7 @@ private fun SettingsPage.depth(): Int = when (this) {
     SettingsPage.Termux,
     SettingsPage.Alpine,
     SettingsPage.RuntimeDefaults,
+    SettingsPage.RemoteAgent,
     SettingsPage.AgentMode,
     SettingsPage.Statistics,
     SettingsPage.Developer,
@@ -402,6 +405,8 @@ fun SettingsScreen(
     llmInactivityReconnectTimeoutSeconds: Int,
     keepTasksRunningInBackground: Boolean,
     notifyOnTaskCompletion: Boolean,
+    remoteAgentConfig: com.zhousl.aether.data.RemoteAgentConfig,
+    remoteAgentStatus: com.zhousl.aether.runtime.remote.RemoteAgentUiStatus,
     agentWorkspaceMode: AgentWorkspaceMode,
     autoCleanOldCommandHistory: Boolean,
     oldCommandHistoryRetentionHours: Int,
@@ -457,6 +462,8 @@ fun SettingsScreen(
         List<TermuxEnvironmentVariable>,
     ) -> Unit,
     onSaveDefaultModelKeys: (String, String, String, String) -> Unit,
+    onSaveRemoteAgentConfig: (com.zhousl.aether.data.RemoteAgentConfig) -> Unit,
+    onTestRemoteAgentConfig: (com.zhousl.aether.data.RemoteAgentConfig) -> Unit,
     onSaveAgentModeAuthorization: (Boolean, AgentModeAuthorizationMethod) -> Unit,
     onUpdateLanguage: (AppLanguage) -> Unit,
     onUpdateThemeMode: (AppThemeMode) -> Unit,
@@ -1117,6 +1124,14 @@ fun SettingsScreen(
                 onBack = { currentPage = SettingsPage.Hub.name },
             )
 
+            SettingsPage.RemoteAgent -> RemoteAgentSettingsPage(
+                config = remoteAgentConfig,
+                status = remoteAgentStatus,
+                onSave = onSaveRemoteAgentConfig,
+                onTest = onTestRemoteAgentConfig,
+                onBack = { currentPage = SettingsPage.Hub.name },
+            )
+
             SettingsPage.Alpine -> AlpineSettingsPage(
                 title = "Alpine",
                 setupState = alpineSetupState,
@@ -1356,6 +1371,18 @@ private fun SettingsHub(
                         )
                     }
                 }
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            // Remote agent host
+            SettingsCardGroup {
+                SettingsNavRow(
+                    icon = Icons.Rounded.Dns,
+                    title = "远程 Agent",
+                    subtitle = remoteAgentSummary(remoteAgentConfig, remoteAgentStatus),
+                    onClick = { onNavigate(SettingsPage.RemoteAgent) },
+                )
             }
 
             Spacer(Modifier.height(16.dp))
@@ -5558,6 +5585,144 @@ private fun AlpineProfileRow(
             onClick = onInstall,
             enabled = enabled && profileState?.installed != true && !isInstalling,
         )
+    }
+}
+
+private fun remoteAgentSummary(
+    config: com.zhousl.aether.data.RemoteAgentConfig,
+    status: com.zhousl.aether.runtime.remote.RemoteAgentUiStatus,
+): String = when {
+    !config.enabled -> "关闭 · Agent 在本机 Alpine 中运行"
+    config.serverUrl.isBlank() -> "已启用 · 尚未填写服务器地址"
+    status.state == "connected" -> "已连接 · ${config.normalizedWorkspace()}"
+    status.state == "connecting" -> "正在连接 ${config.normalizedServerUrl()}"
+    status.state == "failed" -> "连接失败 · ${status.lastError.ifBlank { config.normalizedServerUrl() }}"
+    else -> config.normalizedServerUrl()
+}
+
+@Composable
+private fun RemoteAgentSettingsPage(
+    config: com.zhousl.aether.data.RemoteAgentConfig,
+    status: com.zhousl.aether.runtime.remote.RemoteAgentUiStatus,
+    onSave: (com.zhousl.aether.data.RemoteAgentConfig) -> Unit,
+    onTest: (com.zhousl.aether.data.RemoteAgentConfig) -> Unit,
+    onBack: () -> Unit,
+) {
+    var enabled by remember(config) { mutableStateOf(config.enabled) }
+    var serverUrl by remember(config) {
+        mutableStateOf(TextFieldValue(config.serverUrl))
+    }
+    var token by remember(config) { mutableStateOf(TextFieldValue(config.token)) }
+    var workspace by remember(config) {
+        mutableStateOf(TextFieldValue(config.workspace))
+    }
+    var autoReconnect by remember(config) { mutableStateOf(config.autoReconnect) }
+
+    fun current(): com.zhousl.aether.data.RemoteAgentConfig = config.copy(
+        enabled = enabled,
+        serverUrl = serverUrl.text.trim(),
+        token = token.text.trim(),
+        workspace = workspace.text.trim().ifBlank { com.zhousl.aether.data.DefaultRemoteWorkspace },
+        autoReconnect = autoReconnect,
+    )
+
+    SubPageScaffold(title = "远程 Agent", onBack = onBack) {
+        Text(
+            text = "把 Agent 放到服务器或 DeepSeek Harness 中运行：手机上只显示实时同步的对话与工具调用，" +
+                "所有文件、命令与终端都作用在服务器的工作区里。",
+            style = MaterialTheme.typography.bodySmall,
+            color = AetherOnSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 4.dp),
+        )
+        Spacer(Modifier.height(16.dp))
+
+        SettingsCardGroup {
+            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
+                SettingsToggleRow(
+                    title = "使用远程 Agent",
+                    subtitle = "关闭时仍在本机 Alpine 中运行",
+                    checked = enabled,
+                    onCheckedChange = {
+                        enabled = it
+                        onSave(current().copy(enabled = it))
+                    },
+                )
+            }
+            CardDivider()
+            ChatGptTextField(
+                label = "服务器地址",
+                value = serverUrl,
+                placeholder = "http://192.168.1.10:8787",
+                supportingText = "支持 http(s):// 或 ws(s)://，也接受裸主机:端口",
+                onValueChange = { serverUrl = it },
+            )
+            CardDivider()
+            ChatGptTextField(
+                label = "访问令牌",
+                value = token,
+                isSecret = true,
+                placeholder = "aether-server 启动时打印的 token",
+                onValueChange = { token = it },
+            )
+            CardDivider()
+            ChatGptTextField(
+                label = "工作区",
+                value = workspace,
+                placeholder = com.zhousl.aether.data.DefaultRemoteWorkspace,
+                supportingText = "同一工作区可以被多台设备同时连接",
+                onValueChange = { workspace = it },
+            )
+            CardDivider()
+            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
+                SettingsToggleRow(
+                    title = "自动重连",
+                    subtitle = "网络切换或服务器重启后自动恢复",
+                    checked = autoReconnect,
+                    onCheckedChange = { autoReconnect = it },
+                )
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            SettingsActionButton(
+                label = "测试连接",
+                onClick = { onTest(current()) },
+                isLoading = status.isTesting,
+                modifier = Modifier.weight(1f),
+            )
+            SettingsActionButton(
+                label = "保存",
+                onClick = { onSave(current()) },
+                modifier = Modifier.weight(1f),
+            )
+        }
+
+        if (status.testMessage.isNotBlank() || status.lastError.isNotBlank() ||
+            status.workspaceDirectory.isNotBlank()
+        ) {
+            Spacer(Modifier.height(16.dp))
+            SettingsCardGroup {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    DetailLine(
+                        label = "状态",
+                        value = when {
+                            status.isTesting -> "正在测试…"
+                            status.testOk == true -> "连接正常"
+                            status.testOk == false -> "连接失败"
+                            else -> status.state.ifBlank { "未连接" }
+                        },
+                    )
+                    DetailLine(label = "服务器", value = status.testMessage)
+                    DetailLine(label = "错误", value = status.lastError)
+                    DetailLine(label = "服务器工作区", value = status.workspaceDirectory)
+                    DetailLine(label = "服务器家目录", value = status.homeDirectory)
+                }
+            }
+        }
     }
 }
 
