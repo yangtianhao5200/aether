@@ -64,6 +64,8 @@ export function apply(ctx, config = {}) {
     publicUrl: config.publicUrl ?? process.env.AETHER_PUBLIC_URL ?? "",
     webhookUrl: config.webhookUrl ?? process.env.AETHER_WEBHOOK_URL ?? "",
     logLevel: config.logLevel ?? process.env.AETHER_LOG_LEVEL ?? "info",
+    // With a host webserver there is no port of our own to bind.
+    mountedByHost: Boolean(ctx.webServer),
   };
 
   ctx.effect(async () => {
@@ -74,21 +76,42 @@ export function apply(ctx, config = {}) {
     if (ctx.webServer && server.http) {
       // Mount on the harness webserver: the agent is reachable through the same
       // public URL as the web GUI, e.g. ws://host:3193/aether/v1/agent.
-      const base = mountPath;
-      const disposeHttp = ctx.webServer.register({
-        kind: "prefix",
-        path: base,
-        handler: server.http.handleUnder(base),
-      });
-      const disposeUpgrade = ctx.webServer.registerUpgrade({
-        path: `${base}/v1/agent`,
-        handler: (request, socket, head) => server.http.upgrade(request, socket, head),
-      });
-      logger?.info?.(`Aether remote agent mounted on ${base} of the harness webserver`);
-      dispose = async () => {
-        disposeHttp();
-        disposeUpgrade();
+      //
+      // A duplicate path name makes cordis *throw*, which would abort the whole
+      // harness boot; registration therefore never propagates an error. If the
+      // preferred path is taken we retry once with a suffixed path, and if that
+      // still fails the host keeps running and only logs.
+      const register = (base) => {
+        const disposeHttp = ctx.webServer.register({
+          kind: "prefix",
+          path: base,
+          handler: server.http.handleUnder(base),
+        });
+        const disposeUpgrade = ctx.webServer.registerUpgrade({
+          path: `${base}/v1/agent`,
+          handler: (request, socket, head) => server.http.upgrade(request, socket, head),
+        });
+        logger?.info?.(`Aether remote agent mounted on ${base} of the harness webserver`);
+        dispose = async () => {
+          disposeHttp();
+          disposeUpgrade();
+        };
       };
+      try {
+        register(mountPath);
+      } catch (error) {
+        logger?.warn?.(
+          `Cannot mount the agent on ${mountPath} (${error?.message ?? error}); trying ${mountPath}-remote.`,
+        );
+        try {
+          register(`${mountPath}-remote`);
+        } catch (fallbackError) {
+          logger?.error?.(
+            `Agent HTTP routes unavailable: ${fallbackError?.message ?? fallbackError}. ` +
+              "Change mountPath in the profile patch.",
+          );
+        }
+      }
     } else {
       logger?.info?.(`Aether remote agent server listening on ${server.url}`);
     }
