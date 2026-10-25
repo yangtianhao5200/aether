@@ -5673,7 +5673,14 @@ private fun RemoteAgentSettingsPage(
         ) {
             SettingsActionButton(
                 label = "测试连接",
-                onClick = { onTest(current()) },
+                // Remote is the only mode: filling the address + token and pressing
+                // test is the opt-in. Save first so a successful test leaves the
+                // app configured and the home page opens the chat instead of the
+                // connect card.
+                onClick = {
+                    onSave(current())
+                    onTest(current())
+                },
                 isLoading = status.isTesting,
                 modifier = Modifier.weight(1f),
             )
