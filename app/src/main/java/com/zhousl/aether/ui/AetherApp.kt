@@ -1036,7 +1036,7 @@ private fun AetherAppContent(
                         )
                         } else {
                             com.zhousl.aether.ui.RemoteAgentRequiredContent(
-                                onConnectRemote = viewModel::openOnboardingFromSettings,
+                                onConnectRemote = viewModel::openRemoteAgentOnboarding,
                             )
                         }
                     }

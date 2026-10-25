@@ -1263,6 +1263,18 @@ class AetherViewModel(
         }
     }
 
+    /** Home page: open the remote-agent step directly, skipping the landing page. */
+    fun openRemoteAgentOnboarding() {
+        _uiState.update { current ->
+            current.copy(
+                currentScreen = AppScreen.Onboarding,
+                isOnboardingReplay = true,
+                onboardingStep = OnboardingStep.RemoteAgent,
+                onboardingReturnScreen = AppScreen.Chat,
+            )
+        }
+    }
+
     fun openOnboardingFromSettings() {
         _uiState.update { current ->
             current.copy(
