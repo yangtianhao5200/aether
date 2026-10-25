@@ -277,6 +277,11 @@ class RemoteAetherClient(
     /** Plugins mounted by the host profile, plus its provider routes/models. */
     suspend fun dshPlugins(): JsonObject = request("dsh_plugins_list", buildJsonObject { })
 
+    // The Android module cannot link kotlinx-serialization, so it reads the
+    // same answers as JSON text.
+    suspend fun dshHostInfoJson(): String = dshHostInfo().toString()
+    suspend fun dshPluginsJson(): String = dshPlugins().toString()
+
     /** Enable/disable one host plugin; the host rewrites its profile patch. */
     suspend fun dshSetPluginEnabled(id: String, enabled: Boolean): JsonObject =
         request("dsh_plugin_set_enabled", buildJsonObject {

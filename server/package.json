@@ -31,6 +31,7 @@
     "bundle": "node scripts/bundle-bridge.mjs"
   },
   "dependencies": {
+    "js-yaml": "^4.1.0",
     "ws": "^8.18.0"
   },
   "license": "GPL-3.0-or-later"

@@ -233,7 +233,6 @@ fun AetherApp(
 ) {
     val uiState = viewModel.uiState.collectAsStateWithLifecycle().value
     val remoteAgentStatus = viewModel.remoteAgentStatus.collectAsStateWithLifecycle().value
-    val dshHost = viewModel.dshHost.collectAsStateWithLifecycle().value
     val context = LocalContext.current
     val applicationLanguage = AetherLocaleManager.currentApplicationLanguage()
     val effectiveLanguage = applicationLanguage ?: uiState.settings.language
@@ -334,6 +333,7 @@ fun AetherApp(
                                 language = effectiveLanguage,
                                 nativeModState = nativeModState,
                                 remoteAgentStatus = remoteAgentStatus,
+                                dshHost = viewModel.dshHost.collectAsStateWithLifecycle().value,
                                 onNotificationPermissionRequested = onNotificationPermissionRequested,
                                 drawerOpenedEventRegistered =
                                     "drawer.opened" in extensionState.snapshot.eventNames,
@@ -427,6 +427,7 @@ private fun AetherAppContent(
     language: AppLanguage,
     nativeModState: AetherNativeModState,
     remoteAgentStatus: com.zhousl.aether.runtime.remote.RemoteAgentUiStatus,
+    dshHost: DshHostUiState,
     onNotificationPermissionRequested: () -> Unit,
     drawerOpenedEventRegistered: Boolean,
     onDrawerOpened: () -> Unit,

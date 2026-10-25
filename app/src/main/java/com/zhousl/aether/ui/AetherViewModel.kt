@@ -2377,9 +2377,9 @@ class AetherViewModel(
             val client = com.zhousl.aether.remote.RemoteAetherClient(config.copy(enabled = true))
             try {
                 // The bridge answers with kotlinx Json; the settings page reads org.json.
-                val host = org.json.JSONObject(client.dshHostInfo().toString())
-                val pluginsJson = runCatching { client.dshPlugins() }.getOrNull()
-                    ?.let { org.json.JSONObject(it.toString()) }
+                val host = org.json.JSONObject(client.dshHostInfoJson())
+                val pluginsJson = runCatching { client.dshPluginsJson() }
+                    .getOrNull()?.let { org.json.JSONObject(it) }
                 _dshHost.value = DshHostUiState(
                     loaded = true,
                     isLoading = false,

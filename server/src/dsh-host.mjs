@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { createRequire } from "node:module";
+import yaml from "js-yaml";
 
 /**
  * Read/write side of the DeepSeek Harness host that serves the agent.
@@ -11,53 +11,22 @@ import { createRequire } from "node:module";
  * `cordis.patch.yml`, so this module parses and rewrites that file (with a
  * timestamped backup) instead of pretending to have host shell access.
  *
- * YAML is loaded from the harness CLI when it is installed on this host; on a
- * host without the CLI the management surface stays unavailable rather than
- * guessing at the file semantics.
+ * The profile patch is YAML, parsed with the declared `js-yaml` dependency; no
+ * host shell access is required, and every write keeps a timestamped backup.
  */
 
-let cachedYaml = null;
-
-function loadYaml() {
-  if (cachedYaml !== null) return cachedYaml;
-  const candidates = [
-    "/usr/local/lib/node_modules/@deepseek-ai/dsh",
-    path.join(process.env.AETHER_DSH_HOME || process.env.DSH_HOME || "", "..", "..", "lib", "node_modules", "@deepseek-ai", "dsh"),
-  ];
-  for (const candidate of candidates) {
-    if (!candidate || !fs.existsSync(path.join(candidate, "package.json"))) continue;
-    try {
-      const require = createRequire(path.join(candidate, "package.json"));
-      cachedYaml = require("js-yaml");
-      return cachedYaml;
-    } catch {
-      // try the next candidate
-    }
-  }
-  cachedYaml = false;
-  return cachedYaml;
-}
-
-export function dshHostManagementAvailable(reason = {}) {
-  Object.assign(reason, { yaml: Boolean(loadYaml()) });
-  return Boolean(loadYaml());
+/**
+ * Whether host management can work here. `js-yaml` is a declared dependency, so
+ * this is normally true; it stays a runtime signal because the profile file
+ * itself may also be missing.
+ */
+export function dshHostManagementAvailable() {
+  return Boolean(yaml);
 }
 
 /** `$DSH_HOME/profiles/<name>/cordis.patch.yml` for the running harness home. */
 export function profilePatchPath(dshHome = process.env.DSH_HOME || "/home/dsh/.dsh", profile = "web") {
   return path.join(dshHome, "profiles", profile, "cordis.patch.yml");
-}
-
-function ensureYaml() {
-  const yaml = loadYaml();
-  if (!yaml) {
-    const error = new Error(
-      "DeepSeek Harness management needs the harness CLI on this host (js-yaml was not found).",
-    );
-    error.code = "dsh_management_unavailable";
-    throw error;
-  }
-  return yaml;
 }
 
 /** Map a `- id:`/`- insert:` patch into flat, app-friendly rows. */
@@ -91,8 +60,7 @@ function summarizeEntries(document, sourceKind) {
 
 export function readProfilePatch({ dshHome, profile }) {
   const file = profilePatchPath(dshHome, profile);
-  const yaml = ensureYaml();
-  let raw = "";
+    let raw = "";
   try {
     raw = fs.readFileSync(file, "utf8");
   } catch (error) {
@@ -148,8 +116,7 @@ export function readProfilePatch({ dshHome, profile }) {
 /** Flip one entry's `disabled` flag, keeping a backup of the previous file. */
 export function setProfilePluginEnabled({ dshHome, profile, id, enabled }) {
   const file = profilePatchPath(dshHome, profile);
-  const yaml = ensureYaml();
-  const raw = fs.readFileSync(file, "utf8");
+    const raw = fs.readFileSync(file, "utf8");
   const document = yaml.load(raw);
   if (!Array.isArray(document)) {
     const error = new Error("The harness profile patch is not a YAML list.");
