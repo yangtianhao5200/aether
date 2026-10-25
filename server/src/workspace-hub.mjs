@@ -36,8 +36,8 @@ export class WorkspaceHub {
       extraEnv: config.runtime === "dsh"
         ? {
             AETHER_DSH_HOME: config.dshHome ?? "",
+            AETHER_DSH_COMMAND: config.dshCommand ?? "dsh",
             AETHER_DSH_ARGS: config.dshArgs ?? "--profile acp",
-            AETHER_DSH_NODE: config.nodePath,
           }
         : {},
       log,

@@ -354,11 +354,11 @@ class DshRuntime {
 
 async function main() {
   const cwd = process.env.AETHER_WORKSPACE_DIR || process.cwd();
-  // AETHER_DSH_ARGS is the *complete* command line after the node executable,
-  // e.g. "/path/to/dsh/bin.js --profile acp --patch patch.yml".
+  // AETHER_DSH_COMMAND is the harness launcher (default: `dsh` on PATH) and
+  // AETHER_DSH_ARGS its flags only, e.g. "--profile acp --patch patch.yml".
   const runtime = new DshRuntime({
-    command: process.env.AETHER_DSH_NODE || process.execPath,
-    args: (process.env.AETHER_DSH_ARGS || "/usr/local/lib/node_modules/@deepseek-ai/dsh/lib/bin.js --profile acp")
+    command: process.env.AETHER_DSH_COMMAND || process.env.AETHER_DSH_NODE || "dsh",
+    args: (process.env.AETHER_DSH_ARGS || "--profile acp")
       .split(" ")
       .map((entry) => entry.trim())
       .filter(Boolean),

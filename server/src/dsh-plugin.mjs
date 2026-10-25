@@ -1,5 +1,9 @@
 import { startAetherServer } from "./index.mjs";
-import { defaultBridgePath, repositoryRoot } from "./config.mjs";
+import {
+  defaultBridgePath,
+  defaultDshBridgePath,
+  repositoryRoot,
+} from "./config.mjs";
 
 /**
  * DeepSeek Harness (dsh) plugin.
@@ -35,11 +39,21 @@ export const inject = ["webServer"];
 
 export function apply(ctx, config = {}) {
   const mountPath = String(config.mountPath ?? "/aether").replace(/\/$/, "") || "/aether";
+  const runtime = String(config.runtime ?? process.env.AETHER_RUNTIME ?? "pi").trim() || "pi";
+  const dshBridgePath = config.bridgePath?.trim()
+    || process.env.AETHER_DSH_BRIDGE?.trim()
+    || defaultDshBridgePath;
   const resolved = {
     host: config.host ?? process.env.AETHER_HOST ?? "127.0.0.1",
     port: Number(config.port ?? process.env.AETHER_PORT ?? 8787),
     dataDir: config.dataDir ?? process.env.AETHER_DATA_DIR ?? `${repositoryRoot}/server/data`,
-    bridgePath: config.bridgePath ?? process.env.AETHER_BRIDGE ?? defaultBridgePath,
+    bridgePath: config.bridgePath?.trim()
+      || process.env.AETHER_BRIDGE?.trim()
+      || (runtime === "dsh" ? dshBridgePath : defaultBridgePath),
+    runtime,
+    dshHome: config.dshHome ?? process.env.AETHER_DSH_HOME ?? process.env.DSH_HOME ?? "",
+    dshCommand: config.dshCommand ?? process.env.AETHER_DSH_COMMAND ?? process.env.AETHER_DSH_NODE ?? "dsh",
+    dshArgs: config.dshArgs?.trim() || process.env.AETHER_DSH_ARGS?.trim() || "--profile acp",
     nodePath: config.nodePath ?? process.env.AETHER_NODE ?? process.execPath,
     tokens: normalizeTokens(config),
     noAuth: config.noAuth === true || process.env.AETHER_NO_AUTH === "1",

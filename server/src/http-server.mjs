@@ -11,14 +11,18 @@ const publicDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)
 /**
  * `aether://host:port?token=...&workspace=default` — a single string that fills
  * every onboarding field at once (the app parses it, or the raw host:port).
+ * `basePath` keeps the mount prefix when the agent is hosted on another
+ * webserver, e.g. `/aether` on the DeepSeek Harness web GUI.
  */
-function buildConnectionString(baseUrl, token, workspace) {
+function buildConnectionString(baseUrl, token, workspace, basePath = "") {
   const wsBase = baseUrl
     .replace(/^https:\/\//, "wss://")
     .replace(/^http:\/\//, "ws://")
     .replace(/\/$/, "");
+  const mount = basePath.replace(/^\//, "").replace(/\/$/, "");
+  const suffix = mount ? `/${mount}/v1/agent` : "/v1/agent";
   const query = new URLSearchParams({ token, workspace });
-  return `aether://${wsBase.replace(/^(wss?):\/\//, "")}/v1/agent?${query.toString()}`;
+  return `aether://${wsBase.replace(/^(wss?):\/\//, "")}${suffix}?${query.toString()}`;
 }
 const MAX_BODY_BYTES = 96 * 1024 * 1024;
 const HELLO_TIMEOUT_MS = 15_000;
@@ -68,7 +72,7 @@ export function createAetherHttpServer({ config, registry, tokens, log }) {
         const token = extractToken({ headers: request.headers, url: pathname + url.search });
         const base = config.publicUrl?.trim() || `http://${request.headers.host ?? "localhost"}`;
         const workspace = url.searchParams.get("workspace")?.trim() || "default";
-        const connection = buildConnectionString(base, token, workspace);
+        const connection = buildConnectionString(base, token, workspace, config.mountPath ?? "");
         return sendJson(response, 200, {
           server_url: base,
           token,

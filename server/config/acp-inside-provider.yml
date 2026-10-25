@@ -1,0 +1,21 @@
+# Point the ACP profile at the same provider the web profile uses on this host.
+- id: llm-pi-ai
+  config:
+    providers:
+      inside:
+        apiKeyEnv: INSIDE_API_KEY
+        api: openai-completions
+        baseURL: https://freeshare.cc.cd/v1
+        models:
+          - id: deepseek-v4.1-flash
+            name: deepseek-v4.1-flash
+            contextWindow: 1000000
+            input: [text, image]
+- id: agent-default-model
+  config:
+    provider: inside
+    model: deepseek-v4.1-flash
+- id: acp
+  config:
+    provider: inside
+    model: deepseek-v4.1-flash
