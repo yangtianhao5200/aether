@@ -153,3 +153,15 @@ test("dsh bridge rejects methods the harness runtime does not implement", async 
     assert.equal(frame.error.code, "unsupported_method");
   });
 });
+
+test("dsh launcher arguments drop a legacy node prefix", async () => {
+  const { normalizeDshArgs } = await import("../src/config.mjs");
+  // Old deployments wrote "node /path/to/dsh bin --profile acp"; the bridge must
+  // keep only the flags, otherwise the harness reads the profile as "node".
+  assert.equal(
+    normalizeDshArgs("node /usr/local/lib/node_modules/@deepseek-ai/dsh/lib/bin.js --profile acp --patch /x.yml"),
+    "--profile acp --patch /x.yml",
+  );
+  assert.equal(normalizeDshArgs("--profile acp"), "--profile acp");
+  assert.equal(normalizeDshArgs("/usr/local/bin/node --profile acp"), "--profile acp");
+});

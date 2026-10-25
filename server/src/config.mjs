@@ -39,6 +39,25 @@ export const defaultBridgePath = firstExisting([
  */
 export const defaultDshBridgePath = path.join(packageRoot, "bin", "dsh-bridge.mjs");
 
+/**
+ * Tolerate the historical `node <dsh-bin> --profile acp ...` form.
+ *
+ * The bridge spawns the harness launcher (`dsh`, or AETHER_DSH_COMMAND) with
+ * flags only, so a leading runtime executable and a leading script path must not
+ * reach the child: `node /path/to/dsh --profile acp` would otherwise be read as
+ * the profile name "node".
+ */
+export function normalizeDshArgs(value) {
+  const parts = String(value ?? "").split(" ").map((part) => part.trim()).filter(Boolean);
+  let start = 0;
+  const isCommand = (part) => part === "node" || part === process.execPath || part.endsWith("/node");
+  while (start < parts.length && (isCommand(parts[start]) || /^\/[^ ]*bin\.js$/.test(parts[start]))) {
+    start += 1;
+  }
+  return parts.slice(start).join(" ") || "--profile acp";
+}
+
+
 const USAGE = `Aether remote server
 
 Usage: aether-server [options]
@@ -92,7 +111,7 @@ export function loadConfig(argv = process.argv.slice(2), env = process.env, cwd 
     dshBridgePath: env.AETHER_DSH_BRIDGE?.trim() || defaultDshBridgePath,
     dshHome: env.AETHER_DSH_HOME?.trim() || env.DSH_HOME?.trim() || "",
     dshCommand: env.AETHER_DSH_COMMAND?.trim() || env.AETHER_DSH_NODE?.trim() || "dsh",
-    dshArgs: env.AETHER_DSH_ARGS?.trim() || "--profile acp",
+    dshArgs: normalizeDshArgs(env.AETHER_DSH_ARGS?.trim() || "--profile acp"),
     nodePath: env.AETHER_NODE?.trim() || process.execPath,
     noAuth: env.AETHER_NO_AUTH === "1" || env.AETHER_NO_AUTH === "true",
     idleTimeoutMinutes: env.AETHER_IDLE_TIMEOUT_MINUTES

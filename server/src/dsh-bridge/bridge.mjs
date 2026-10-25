@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
+import { normalizeDshArgs } from "../config.mjs";
 import { AcpClient } from "./acp-client.mjs";
 
 const BRIDGE_VERSION = "aether-dsh-bridge/1.0.0";
@@ -358,10 +359,7 @@ async function main() {
   // AETHER_DSH_ARGS its flags only, e.g. "--profile acp --patch patch.yml".
   const runtime = new DshRuntime({
     command: process.env.AETHER_DSH_COMMAND || process.env.AETHER_DSH_NODE || "dsh",
-    args: (process.env.AETHER_DSH_ARGS || "--profile acp")
-      .split(" ")
-      .map((entry) => entry.trim())
-      .filter(Boolean),
+    args: normalizeDshArgs(process.env.AETHER_DSH_ARGS || "--profile acp").split(" ").filter(Boolean),
     env: {
       ...(process.env.AETHER_DSH_HOME || process.env.DSH_HOME
         ? { DSH_HOME: process.env.AETHER_DSH_HOME || process.env.DSH_HOME }
