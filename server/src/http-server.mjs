@@ -34,13 +34,20 @@ const KEEPALIVE_INTERVAL_MS = 30_000;
 export function createAetherHttpServer({ config, registry, tokens, log }) {
   const sseClients = new Map();
 
-  const httpServer = createHttpServer(async (request, response) => {
+  /**
+   * One HTTP request handler, optionally mounted under a path prefix by a host
+   * (the DeepSeek Harness webserver plugin mounts `/aether`).
+   */
+  const route = async (request, response, basePath = "") => {
     const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
+    const pathname = basePath && url.pathname.startsWith(basePath)
+      ? (url.pathname.slice(basePath.length) || "/")
+      : url.pathname;
     try {
       if (request.method === "OPTIONS") {
         return sendJson(response, 204, null);
       }
-      if (url.pathname === "/healthz") {
+      if (pathname === "/healthz") {
         return sendJson(response, 200, {
           ok: true,
           version: SERVER_VERSION,
@@ -48,17 +55,17 @@ export function createAetherHttpServer({ config, registry, tokens, log }) {
           uptime_seconds: Math.round(process.uptime()),
         });
       }
-      if (url.pathname === "/" || url.pathname === "/dashboard") {
+      if (pathname === "/" || pathname === "/dashboard") {
         const html = await readFile(path.join(publicDirectory, "index.html"), "utf8").catch(() => "");
         if (!html) return sendJson(response, 404, { error: "dashboard_unavailable" });
         response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
         return response.end(html);
       }
-      if (url.pathname === "/v1/pair") {
-        requireIdentity(request, url);
+      if (pathname === "/v1/pair") {
+        requireIdentity(request, url, pathname);
         // Only the raw bearer token can build a connectable string; the identity
         // service keeps digests.
-        const token = extractToken({ headers: request.headers, url: url.pathname + url.search });
+        const token = extractToken({ headers: request.headers, url: pathname + url.search });
         const base = config.publicUrl?.trim() || `http://${request.headers.host ?? "localhost"}`;
         const workspace = url.searchParams.get("workspace")?.trim() || "default";
         const connection = buildConnectionString(base, token, workspace);
@@ -71,8 +78,8 @@ export function createAetherHttpServer({ config, registry, tokens, log }) {
           qr_payload: connection,
         });
       }
-      if (url.pathname === "/v1/info") {
-        const identity = requireIdentity(request, url);
+      if (pathname === "/v1/info") {
+        const identity = requireIdentity(request, url, pathname);
         return sendJson(response, 200, {
           server_version: SERVER_VERSION,
           protocol: PROTOCOL_VERSION,
@@ -82,8 +89,8 @@ export function createAetherHttpServer({ config, registry, tokens, log }) {
           bridges: [...registry.hubs.values()].map((hub) => hub.bridge.status()),
         });
       }
-      if (url.pathname === "/v1/workspaces") {
-        const identity = requireIdentity(request, url);
+      if (pathname === "/v1/workspaces") {
+        const identity = requireIdentity(request, url, pathname);
         if (request.method === "GET") {
           return sendJson(response, 200, {
             workspaces: await registry.workspaceStore.list(identity.user),
@@ -96,9 +103,9 @@ export function createAetherHttpServer({ config, registry, tokens, log }) {
         }
       }
 
-      const workspaceMatch = url.pathname.match(/^\/v1\/workspaces\/([^/]+)(?:\/([^/]+))?\/?$/);
+      const workspaceMatch = pathname.match(/^\/v1\/workspaces\/([^/]+)(?:\/([^/]+))?\/?$/);
       if (workspaceMatch) {
-        const identity = requireIdentity(request, url);
+        const identity = requireIdentity(request, url, pathname);
         const workspaceName = decodeURIComponent(workspaceMatch[1]);
         const action = workspaceMatch[2] ?? "";
         const workspace = await registry.workspaceStore.ensure(identity.user, workspaceName);
@@ -137,16 +144,16 @@ export function createAetherHttpServer({ config, registry, tokens, log }) {
       return sendJson(response, 404, { error: "not_found" });
     } catch (error) {
       const status = error.statusCode ?? (error.code === "unauthorized" ? 401 : 500);
-      if (status >= 500) log("error", "http.failed", { path: url.pathname, error: String(error) });
+      if (status >= 500) log("error", "http.failed", { path: pathname, error: String(error) });
       return sendJson(response, status, {
         error: error.code ?? "server_error",
         message: String(error.message ?? error),
       });
     }
-  });
+  };
 
-  function requireIdentity(request, url) {
-    const identity = tokens.identify(extractToken({ headers: request.headers, url: url.pathname + url.search }));
+  function requireIdentity(request, url, pathname) {
+    const identity = tokens.identify(extractToken({ headers: request.headers, url: pathname + url.search }));
     if (!identity) {
       const error = new Error("Missing or invalid Aether token.");
       error.statusCode = 401;
@@ -156,13 +163,19 @@ export function createAetherHttpServer({ config, registry, tokens, log }) {
     return identity;
   }
 
+  // Standalone listener (same routing, empty base path).
+  const httpServer = createHttpServer((request, response) => route(request, response, ""));
+
   // ------------------------------------------------------------------- WS
 
   const wsServer = new WebSocketServer({ noServer: true, maxPayload: MAX_BODY_BYTES });
 
-  httpServer.on("upgrade", async (request, socket, head) => {
+  // Accepts `/v1/agent`, `/ws`, or any prefix ending in them, so a host can
+  // mount the socket under a path (e.g. `/aether/v1/agent`).
+  const upgrade = async (request, socket, head) => {
     const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
-    if (url.pathname !== "/v1/agent" && url.pathname !== "/ws") {
+    const trimmed = url.pathname.endsWith("/") ? url.pathname.slice(0, -1) : url.pathname;
+    if (!trimmed.endsWith("/v1/agent") && !trimmed.endsWith("/ws")) {
       socket.destroy();
       return;
     }
@@ -171,6 +184,9 @@ export function createAetherHttpServer({ config, registry, tokens, log }) {
     wsServer.handleUpgrade(request, socket, head, (webSocket) => {
       wsServer.emit("connection", webSocket, request, { url, headerIdentity });
     });
+  };
+  httpServer.on("upgrade", (request, socket, head) => {
+    void upgrade(request, socket, head);
   });
 
   wsServer.on("connection", (socket, request, context) => {
@@ -329,6 +345,11 @@ export function createAetherHttpServer({ config, registry, tokens, log }) {
   return {
     httpServer,
     wsServer,
+    /** Mountable HTTP handler (used by the DeepSeek Harness plugin). */
+    handle: (request, response) => route(request, response, ""),
+    handleUnder: (basePath) => (request, response) => route(request, response, basePath),
+    /** Mountable WebSocket upgrade handler. */
+    upgrade,
     listen(port = config.port, host = config.host) {
       return new Promise((resolve, reject) => {
         httpServer.once("error", reject);

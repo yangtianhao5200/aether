@@ -354,12 +354,21 @@ class DshRuntime {
 
 async function main() {
   const cwd = process.env.AETHER_WORKSPACE_DIR || process.cwd();
+  // AETHER_DSH_ARGS is the *complete* command line after the node executable,
+  // e.g. "/path/to/dsh/bin.js --profile acp --patch patch.yml".
   const runtime = new DshRuntime({
     command: process.env.AETHER_DSH_NODE || process.execPath,
-    args: (process.env.AETHER_DSH_ARGS || "--profile acp").split(" ").filter(Boolean),
+    args: (process.env.AETHER_DSH_ARGS || "/usr/local/lib/node_modules/@deepseek-ai/dsh/lib/bin.js --profile acp")
+      .split(" ")
+      .map((entry) => entry.trim())
+      .filter(Boolean),
     env: {
-      DSH_HOME: process.env.AETHER_DSH_HOME || process.env.DSH_HOME || "",
+      ...(process.env.AETHER_DSH_HOME || process.env.DSH_HOME
+        ? { DSH_HOME: process.env.AETHER_DSH_HOME || process.env.DSH_HOME }
+        : {}),
       DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY || "",
+      OPENAI_API_KEY: process.env.OPENAI_API_KEY || "",
+      OPENAI_BASE_URL: process.env.OPENAI_BASE_URL || "",
     },
     cwd,
     log: (line) => process.stderr.write(`${line}\n`),

@@ -45,15 +45,19 @@ export async function startAetherServer(options = {}) {
   const tokens = createTokenRegistry(config);
   const registry = new HubRegistry({ config, workspaceStore, log });
   const http = createAetherHttpServer({ config, registry, tokens, log });
-  const address = await http.listen(config.port, config.host);
+
+  // `host` mode (an external process owns the listening socket, e.g. the
+  // DeepSeek Harness webserver plugin) keeps the handler and returns no address.
+  const mountedByHost = config.mountedByHost === true;
+  const address = mountedByHost ? null : await http.listen(config.port, config.host);
   const port = typeof address === "object" && address ? address.port : config.port;
   const host = config.host === "0.0.0.0" || config.host === "::" ? "127.0.0.1" : config.host;
-  const url = config.publicUrl || `http://${host}:${port}`;
+  const url = config.publicUrl || (mountedByHost ? "" : `http://${host}:${port}`);
 
   log("info", "server.started", {
     version: SERVER_VERSION,
     protocol: PROTOCOL_VERSION,
-    url,
+    ...(mountedByHost ? { mode: "host-mounted" } : { url }),
     data_dir: config.dataDir,
     bridge: config.bridgePath,
     auth: config.noAuth ? "disabled" : `${tokens.size} token(s)`,
@@ -61,15 +65,21 @@ export async function startAetherServer(options = {}) {
 
   return {
     url,
-    port,
-    host: config.host,
+    port: mountedByHost ? 0 : port,
+    host: mountedByHost ? "" : config.host,
+    /** Mount on an external webserver: { handle: (req,res)=>void, upgrade: (req,socket,head)=>void } */
+    http,
     config,
     registry,
     workspaceStore,
     log,
     async close() {
       await registry.closeAll();
-      await http.close();
+      if (!mountedByHost) await http.close();
+      else {
+        for (const client of http.wsServer.clients) client.terminate();
+        http.wsServer.close();
+      }
       log("info", "server.stopped", {});
     },
   };

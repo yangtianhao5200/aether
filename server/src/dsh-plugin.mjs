@@ -26,10 +26,15 @@ import { defaultBridgePath, repositoryRoot } from "./config.mjs";
  */
 export const name = "aether-remote-server";
 
-/** No services are required; the plugin only owns a listening socket. */
-export const inject = [];
+/**
+ * `webServer` is optional: with it the routes are mounted on the host's HTTP
+ * server (the same public URL the DeepSeek Harness web GUI uses); without it the
+ * plugin binds its own port.
+ */
+export const inject = ["webServer"];
 
 export function apply(ctx, config = {}) {
+  const mountPath = String(config.mountPath ?? "/aether").replace(/\/$/, "") || "/aether";
   const resolved = {
     host: config.host ?? process.env.AETHER_HOST ?? "127.0.0.1",
     port: Number(config.port ?? process.env.AETHER_PORT ?? 8787),
@@ -49,10 +54,31 @@ export function apply(ctx, config = {}) {
 
   ctx.effect(async () => {
     const server = await startAetherServer(resolved);
-    ctx.logger?.("aether-remote-server")?.info?.(
-      `Aether remote agent server listening on ${server.url}`,
-    );
-    // Expose the handle so other plugins (or dsh commands) can inspect it.
+    const logger = ctx.logger?.("aether-remote-server");
+    let dispose = async () => {};
+
+    if (ctx.webServer && server.http) {
+      // Mount on the harness webserver: the agent is reachable through the same
+      // public URL as the web GUI, e.g. ws://host:3193/aether/v1/agent.
+      const base = mountPath;
+      const disposeHttp = ctx.webServer.register({
+        kind: "prefix",
+        path: base,
+        handler: server.http.handleUnder(base),
+      });
+      const disposeUpgrade = ctx.webServer.registerUpgrade({
+        path: `${base}/v1/agent`,
+        handler: (request, socket, head) => server.http.upgrade(request, socket, head),
+      });
+      logger?.info?.(`Aether remote agent mounted on ${base} of the harness webserver`);
+      dispose = async () => {
+        disposeHttp();
+        disposeUpgrade();
+      };
+    } else {
+      logger?.info?.(`Aether remote agent server listening on ${server.url}`);
+    }
+
     const disposeProvide = ctx.provide?.("aetherRemoteServer", server);
     return async () => {
       try {
@@ -60,6 +86,7 @@ export function apply(ctx, config = {}) {
       } catch {
         // provider already gone
       }
+      await dispose();
       await server.close();
     };
   }, "aether-remote-server");

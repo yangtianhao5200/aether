@@ -91,7 +91,9 @@ export function loadConfig(argv = process.argv.slice(2), env = process.env, cwd 
       (env.AETHER_RUNTIME?.trim() === "dsh" ? defaultDshBridgePath : defaultBridgePath),
     dshBridgePath: env.AETHER_DSH_BRIDGE?.trim() || defaultDshBridgePath,
     dshHome: env.AETHER_DSH_HOME?.trim() || env.DSH_HOME?.trim() || "",
-    dshArgs: env.AETHER_DSH_ARGS?.trim() || "--profile acp",
+    dshArgs:
+      env.AETHER_DSH_ARGS?.trim() ||
+      `${process.execPath} /usr/local/lib/node_modules/@deepseek-ai/dsh/lib/bin.js --profile acp`,
     nodePath: env.AETHER_NODE?.trim() || process.execPath,
     noAuth: env.AETHER_NO_AUTH === "1" || env.AETHER_NO_AUTH === "true",
     idleTimeoutMinutes: env.AETHER_IDLE_TIMEOUT_MINUTES
