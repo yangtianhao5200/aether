@@ -7,6 +7,19 @@ import { extractToken } from "./auth.mjs";
 import { PROTOCOL_VERSION, SERVER_VERSION } from "./config.mjs";
 
 const publicDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "public");
+
+/**
+ * `aether://host:port?token=...&workspace=default` — a single string that fills
+ * every onboarding field at once (the app parses it, or the raw host:port).
+ */
+function buildConnectionString(baseUrl, token, workspace) {
+  const wsBase = baseUrl
+    .replace(/^https:\/\//, "wss://")
+    .replace(/^http:\/\//, "ws://")
+    .replace(/\/$/, "");
+  const query = new URLSearchParams({ token, workspace });
+  return `aether://${wsBase.replace(/^(wss?):\/\//, "")}/v1/agent?${query.toString()}`;
+}
 const MAX_BODY_BYTES = 96 * 1024 * 1024;
 const HELLO_TIMEOUT_MS = 15_000;
 const KEEPALIVE_INTERVAL_MS = 30_000;
@@ -40,6 +53,23 @@ export function createAetherHttpServer({ config, registry, tokens, log }) {
         if (!html) return sendJson(response, 404, { error: "dashboard_unavailable" });
         response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
         return response.end(html);
+      }
+      if (url.pathname === "/v1/pair") {
+        requireIdentity(request, url);
+        // Only the raw bearer token can build a connectable string; the identity
+        // service keeps digests.
+        const token = extractToken({ headers: request.headers, url: url.pathname + url.search });
+        const base = config.publicUrl?.trim() || `http://${request.headers.host ?? "localhost"}`;
+        const workspace = url.searchParams.get("workspace")?.trim() || "default";
+        const connection = buildConnectionString(base, token, workspace);
+        return sendJson(response, 200, {
+          server_url: base,
+          token,
+          workspace,
+          // One string the app can paste: aether://host:port?token=...&workspace=default
+          connection_string: connection,
+          qr_payload: connection,
+        });
       }
       if (url.pathname === "/v1/info") {
         const identity = requireIdentity(request, url);

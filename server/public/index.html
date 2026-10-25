@@ -74,6 +74,7 @@
   dt { color: var(--muted); }
   dd { margin: 0; word-break: break-all; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
   .muted { color: var(--muted); }
+  #pairString { width: 100%; margin: 8px 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
   .empty { color: var(--muted); text-align: center; padding: 40px 0; }
 </style>
 </head>
@@ -93,6 +94,14 @@
     <div class="empty">连接后，这里会实时显示 Agent 的工作内容。</div>
   </section>
   <aside>
+    <div class="card">
+      <h2>手机接入</h2>
+      <p class="muted">填好上面的令牌和工作区后点「生成连接串」，把它粘贴到 App 的
+        「粘贴连接信息」即可一步完成配置。</p>
+      <button id="pair">生成连接串</button>
+      <input id="pairString" readonly placeholder="aether://host:port/v1/agent?token=..." />
+      <button id="copyPair" class="ghost" disabled>复制</button>
+    </div>
     <div class="card">
       <h2>服务器</h2>
       <dl id="serverInfo"><dt>状态</dt><dd>未连接</dd></dl>
@@ -247,6 +256,35 @@
 
   $("connect").onclick = connect;
   $("disconnect").onclick = disconnect;
+  $("pair").onclick = async () => {
+    const token = $("token").value.trim();
+    const workspace = $("workspace").value.trim() || "default";
+    if (!token) { $("pairString").value = "先填写令牌"; return; }
+    try {
+      const response = await fetch(
+        `/v1/pair?workspace=${encodeURIComponent(workspace)}`,
+        { headers: { authorization: `Bearer ${token}` } },
+      );
+      const body = await response.json();
+      if (!response.ok) throw new Error(body?.error ?? response.status);
+      $("pairString").value = body.connection_string;
+      $("copyPair").disabled = false;
+    } catch (error) {
+      $("pairString").value = `生成失败：${error.message}`;
+      $("copyPair").disabled = true;
+    }
+  };
+  $("copyPair").onclick = async () => {
+    const value = $("pairString").value;
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      $("copyPair").textContent = "已复制";
+      setTimeout(() => { $("copyPair").textContent = "复制"; }, 1600);
+    } catch {
+      $("pairString").select();
+    }
+  };
   $("token").addEventListener("keydown", (event) => { if (event.key === "Enter") connect(); });
 })();
 </script>

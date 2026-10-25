@@ -333,6 +333,24 @@ test("HTTP API mirrors the WebSocket surface", async () => {
   });
 });
 
+test("pairing endpoint returns a one-shot connection string", async () => {
+  await withServer(async (server) => {
+    const headers = { authorization: `Bearer ${TOKEN}` };
+    const pair = await fetch(`${server.url}/v1/pair?workspace=project-a`, { headers })
+      .then((response) => response.json());
+    assert.equal(pair.token, TOKEN);
+    assert.equal(pair.workspace, "project-a");
+    assert.ok(pair.connection_string.startsWith("aether://"), pair.connection_string);
+    assert.ok(pair.connection_string.includes(`token=${TOKEN}`), pair.connection_string);
+    assert.ok(pair.connection_string.includes("workspace=project-a"), pair.connection_string);
+    // The string encodes the websocket endpoint the app connects to.
+    assert.ok(pair.connection_string.includes("/v1/agent?"), pair.connection_string);
+
+    const missing = await fetch(`${server.url}/v1/pair`, { headers: {} }).then((response) => response.status);
+    assert.equal(missing, 401);
+  });
+});
+
 test("restarting the bridge keeps the same workspace", async () => {
   await withServer(async (server) => {
     const client = await new TestClient(server.url).connect();

@@ -197,6 +197,7 @@ fun OnboardingScreen(
     remoteAgentStatus: com.zhousl.aether.runtime.remote.RemoteAgentUiStatus,
     onSaveRemoteAgentConfig: (com.zhousl.aether.data.RemoteAgentConfig) -> Unit,
     onTestRemoteAgentConfig: (com.zhousl.aether.data.RemoteAgentConfig) -> Unit,
+    onReadClipboardText: () -> String,
     onCompleteProviderSetup: (LlmProviderConfig) -> Unit,
     onRequestTermuxPermission: () -> Unit,
     onOpenAppPermissions: () -> Unit,
@@ -268,6 +269,11 @@ fun OnboardingScreen(
                 testOk = remoteAgentStatus.testOk,
                 testMessage = remoteAgentStatus.testMessage,
                 onConfigChange = { remoteAgentDraft = it },
+                onPasteConnection = { onReadClipboardText().takeIf { it.isNotBlank() }?.let { pasted ->
+                        com.zhousl.aether.data.parseRemoteConnectionString(pasted)
+                            ?.let { remoteAgentDraft = it }
+                    }
+                },
                 onTest = { onTestRemoteAgentConfig(remoteAgentDraft) },
                 onComplete = {
                     if (remoteAgentDraft.isConfigured) {

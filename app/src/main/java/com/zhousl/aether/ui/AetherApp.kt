@@ -864,6 +864,7 @@ private fun AetherAppContent(
                         remoteAgentStatus = remoteAgentStatus,
                         onSaveRemoteAgentConfig = viewModel::saveRemoteAgentConfig,
                         onTestRemoteAgentConfig = viewModel::testRemoteAgentConfig,
+                        onReadClipboardText = { clipboardManager.getText()?.text.orEmpty() },
                         onClose = viewModel::closeOnboarding,
                         onCompleteProviderSetup = viewModel::completeOnboardingProviderSetup,
                         onRequestTermuxPermission = { requestTermuxPermission("onboarding_termux_permission") },

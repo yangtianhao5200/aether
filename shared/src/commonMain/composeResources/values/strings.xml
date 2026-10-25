@@ -991,6 +991,7 @@
     <string name="onboarding_remote_title">Connect your agent</string>
     <string name="onboarding_remote_subtitle">Aether runs on your own server. Enter the address and token you got from aether-server to continue.</string>
     <string name="onboarding_remote_hint">The agent, its tools and your files all live on the server — this app connects, streams and steers the work.</string>
+    <string name="onboarding_remote_paste">Paste connection info</string>
     <string name="onboarding_remote_url_label">Server address</string>
     <string name="onboarding_remote_url_placeholder">192.168.1.10:8787 or https://agent.example.com</string>
     <string name="onboarding_remote_token_label">Access token</string>
