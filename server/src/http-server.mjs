@@ -72,7 +72,11 @@ export function createAetherHttpServer({ config, registry, tokens, log }) {
         const token = extractToken({ headers: request.headers, url: pathname + url.search });
         const base = config.publicUrl?.trim() || `http://${request.headers.host ?? "localhost"}`;
         const workspace = url.searchParams.get("workspace")?.trim() || "default";
-        const connection = buildConnectionString(base, token, workspace, config.mountPath ?? "");
+        // Derive the mount prefix from the request itself (".../aether/v1/pair"),
+        // so a host-mounted agent always emits a connectable string.
+        const bare = basePath ? basePath.replace(/\/$/, "") : "";
+        const derived = bare.endsWith("/v1/pair") ? bare.slice(0, -"/v1/pair".length) : "";
+        const connection = buildConnectionString(base, token, workspace, derived || config.mountPath || "");
         return sendJson(response, 200, {
           server_url: base,
           token,
