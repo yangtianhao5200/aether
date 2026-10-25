@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
 import { extractToken } from "./auth.mjs";
 import { PROTOCOL_VERSION, SERVER_VERSION } from "./config.mjs";
+import { dshHostInfo, readProfilePatch, setProfilePluginEnabled } from "./dsh-host.mjs";
 
 const publicDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "public");
 
@@ -85,6 +86,43 @@ export function createAetherHttpServer({ config, registry, tokens, log }) {
           connection_string: connection,
           qr_payload: connection,
         });
+      }
+      if (pathname === "/v1/dsh/host" || pathname === "/v1/dsh/plugins") {
+        const identity = requireIdentity(request, url, pathname);
+        const dshHome = config.dshHome?.trim() || "";
+        if (pathname === "/v1/dsh/host") {
+          return sendJson(response, 200, dshHostInfo({
+            dshHome,
+            profile: url.searchParams.get("profile") || "web",
+            mountPath: config.mountPath ?? "",
+          }));
+        }
+        try {
+          return sendJson(response, 200, readProfilePatch({
+            dshHome,
+            profile: url.searchParams.get("profile") || "web",
+          }));
+        } catch (error) {
+          const status = error.code === "dsh_management_unavailable" ? 501 : 400;
+          return sendJson(response, status, { error: error.code ?? "dsh_error", message: String(error.message ?? error) });
+        }
+      }
+      if (pathname === "/v1/dsh/plugins/toggle" && request.method === "POST") {
+        const identity = requireIdentity(request, url, pathname);
+        const body = await readJsonBody(request);
+        try {
+          return sendJson(response, 200, setProfilePluginEnabled({
+            dshHome: config.dshHome?.trim() || "",
+            profile: String(body.profile ?? "web"),
+            id: String(body.id ?? ""),
+            enabled: body.enabled === true,
+          }));
+        } catch (error) {
+          return sendJson(response, error.code === "dsh_plugin_not_found" ? 404 : 400, {
+            error: error.code ?? "dsh_error",
+            message: String(error.message ?? error),
+          });
+        }
       }
       if (pathname === "/v1/info") {
         const identity = requireIdentity(request, url, pathname);

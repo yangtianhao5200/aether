@@ -233,6 +233,7 @@ fun AetherApp(
 ) {
     val uiState = viewModel.uiState.collectAsStateWithLifecycle().value
     val remoteAgentStatus = viewModel.remoteAgentStatus.collectAsStateWithLifecycle().value
+    val dshHost = viewModel.dshHost.collectAsStateWithLifecycle().value
     val context = LocalContext.current
     val applicationLanguage = AetherLocaleManager.currentApplicationLanguage()
     val effectiveLanguage = applicationLanguage ?: uiState.settings.language
@@ -1052,6 +1053,9 @@ private fun AetherAppContent(
                     notifyOnTaskCompletion = uiState.settings.notifyOnTaskCompletion,
                     remoteAgentConfig = uiState.settings.remoteAgent,
                     remoteAgentStatus = remoteAgentStatus,
+                    dshHost = dshHost,
+                    onRefreshDshHost = { viewModel.refreshDshHost(force = true) },
+                    onSetDshPluginEnabled = viewModel::setDshPluginEnabled,
                     agentWorkspaceMode = uiState.settings.agentWorkspaceMode,
                     autoCleanOldCommandHistory =
                         uiState.settings.autoCleanOldCommandHistory,

@@ -215,6 +215,10 @@ class AetherViewModel(
         MutableStateFlow(com.zhousl.aether.runtime.remote.RemoteAgentUiStatus())
     val remoteAgentStatus: StateFlow<com.zhousl.aether.runtime.remote.RemoteAgentUiStatus> =
         _remoteAgentStatus.asStateFlow()
+
+    /** DeepSeek Harness host facts: plugins, provider routes, CLI version. */
+    private val _dshHost = MutableStateFlow(DshHostUiState())
+    val dshHost: StateFlow<DshHostUiState> = _dshHost.asStateFlow()
     val transientMessages = _transientMessages.asSharedFlow()
     val showcaseStates = sessionExecutionManager.showcaseStates
 
@@ -2355,6 +2359,70 @@ class AetherViewModel(
         }
     }
 
+    /**
+     * Pull the host's plugins and provider routes. Called automatically after a
+     * successful connect so the settings page never shows stale host data, and
+     * again whenever the user pulls the page open.
+     */
+    fun refreshDshHost(force: Boolean = false) {
+        if (!force && _dshHost.value.loaded) return
+        viewModelScope.launch {
+            _dshHost.value = _dshHost.value.copy(isLoading = true, error = "")
+            val settings = settingsRepository.settings.first()
+            val config = settings.remoteAgent
+            if (!config.isConfigured) {
+                _dshHost.value = DshHostUiState(error = "远程 Agent 尚未配置。")
+                return@launch
+            }
+            val client = com.zhousl.aether.remote.RemoteAetherClient(config.copy(enabled = true))
+            try {
+                // The bridge answers with kotlinx Json; the settings page reads org.json.
+                val host = org.json.JSONObject(client.dshHostInfo().toString())
+                val pluginsJson = runCatching { client.dshPlugins() }.getOrNull()
+                    ?.let { org.json.JSONObject(it.toString()) }
+                _dshHost.value = DshHostUiState(
+                    loaded = true,
+                    isLoading = false,
+                    runtime = host.optString("runtime"),
+                    profile = host.optString("profile"),
+                    mountPath = host.optString("mount_path"),
+                    dshVersion = host.optString("dsh_version"),
+                    managementAvailable = host.optBoolean("management", false),
+                    plugins = parseDshPlugins(pluginsJson),
+                    providers = parseDshProviders(pluginsJson),
+                )
+            } catch (error: Throwable) {
+                _dshHost.value = _dshHost.value.copy(
+                    isLoading = false,
+                    error = error.message ?: "无法读取 Harness 主机信息。",
+                )
+            } finally {
+                runCatching { client.close() }
+                client.dispose()
+            }
+        }
+    }
+
+    fun setDshPluginEnabled(id: String, enabled: Boolean) {
+        viewModelScope.launch {
+            val settings = settingsRepository.settings.first()
+            val config = settings.remoteAgent
+            if (!config.isConfigured) return@launch
+            val client = com.zhousl.aether.remote.RemoteAetherClient(config.copy(enabled = true))
+            try {
+                client.dshSetPluginEnabled(id, enabled)
+                refreshDshHost(force = true)
+            } catch (error: Throwable) {
+                _dshHost.value = _dshHost.value.copy(
+                    error = error.message ?: "切换插件失败。",
+                )
+            } finally {
+                runCatching { client.close() }
+                client.dispose()
+            }
+        }
+    }
+
     fun saveRemoteAgentConfig(config: com.zhousl.aether.data.RemoteAgentConfig) {
         viewModelScope.launch {
             val settings = settingsRepository.settings.first()
@@ -2373,6 +2441,8 @@ class AetherViewModel(
                             workspaceDirectory = runtime.remoteAgentHost.workspaceRootOrNull.orEmpty(),
                             homeDirectory = runtime.remoteAgentHost.homeDirectoryOrNull.orEmpty(),
                         )
+                        // Connected: pull the host's plugins and provider routes now.
+                        refreshDshHost(force = true)
                     }
                     .onFailure { error ->
                         _remoteAgentStatus.value = _remoteAgentStatus.value.copy(

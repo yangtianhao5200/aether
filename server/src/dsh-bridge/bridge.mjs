@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
 import { normalizeDshArgs } from "../config.mjs";
+import { dshHostInfo, readProfilePatch, setProfilePluginEnabled } from "../dsh-host.mjs";
 import { AcpClient } from "./acp-client.mjs";
 
 const BRIDGE_VERSION = "aether-dsh-bridge/1.0.0";
@@ -449,6 +450,27 @@ async function main() {
           return;
         case "list_extension_packages":
           writeResponse(id, { packages: [] });
+          return;
+        case "dsh_host_info":
+          writeResponse(id, dshHostInfo({
+            dshHome: process.env.AETHER_DSH_HOME || process.env.DSH_HOME || "",
+            profile: asString(payload.profile) || "web",
+            mountPath: process.env.AETHER_MOUNT_PATH || "",
+          }));
+          return;
+        case "dsh_plugins_list":
+          writeResponse(id, readProfilePatch({
+            dshHome: process.env.AETHER_DSH_HOME || process.env.DSH_HOME || "",
+            profile: asString(payload.profile) || "web",
+          }));
+          return;
+        case "dsh_plugin_set_enabled":
+          writeResponse(id, setProfilePluginEnabled({
+            dshHome: process.env.AETHER_DSH_HOME || process.env.DSH_HOME || "",
+            profile: asString(payload.profile) || "web",
+            id: asString(payload.id),
+            enabled: payload.enabled === true,
+          }));
           return;
         case "list_discovered_skills":
           writeResponse(id, { skills: [] });

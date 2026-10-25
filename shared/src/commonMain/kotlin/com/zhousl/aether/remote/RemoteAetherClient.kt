@@ -271,6 +271,19 @@ class RemoteAetherClient(
 
     suspend fun ping(): JsonObject = request("srv_ping", buildJsonObject { })
 
+    /** DeepSeek Harness host facts (profile, mount path, CLI version). */
+    suspend fun dshHostInfo(): JsonObject = request("dsh_host_info", buildJsonObject { })
+
+    /** Plugins mounted by the host profile, plus its provider routes/models. */
+    suspend fun dshPlugins(): JsonObject = request("dsh_plugins_list", buildJsonObject { })
+
+    /** Enable/disable one host plugin; the host rewrites its profile patch. */
+    suspend fun dshSetPluginEnabled(id: String, enabled: Boolean): JsonObject =
+        request("dsh_plugin_set_enabled", buildJsonObject {
+            put("id", id)
+            put("enabled", enabled)
+        })
+
     /**
      * Sends a bridge frame (`run_turn`, `ping`, `abort`, …) to the server.
      * [line] is the exact newline-delimited JSON the local bridge would read.

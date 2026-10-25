@@ -393,6 +393,9 @@ fun SettingsScreen(
     notifyOnTaskCompletion: Boolean,
     remoteAgentConfig: com.zhousl.aether.data.RemoteAgentConfig,
     remoteAgentStatus: com.zhousl.aether.runtime.remote.RemoteAgentUiStatus,
+    dshHost: DshHostUiState,
+    onRefreshDshHost: () -> Unit,
+    onSetDshPluginEnabled: (String, Boolean) -> Unit,
     agentWorkspaceMode: AgentWorkspaceMode,
     autoCleanOldCommandHistory: Boolean,
     oldCommandHistoryRetentionHours: Int,
@@ -1092,6 +1095,12 @@ fun SettingsScreen(
             SettingsPage.RemoteAgent -> RemoteAgentSettingsPage(
                 config = remoteAgentConfig,
                 status = remoteAgentStatus,
+                host = dshHost,
+                onRefreshHost = {
+                    if (remoteAgentStatus.state != "connected") onTestRemoteAgentConfig(remoteAgentConfig)
+                    onRefreshDshHost()
+                },
+                onSetPluginEnabled = onSetDshPluginEnabled,
                 onSave = onSaveRemoteAgentConfig,
                 onTest = onTestRemoteAgentConfig,
                 onBack = { currentPage = SettingsPage.Hub.name },
@@ -5037,6 +5046,9 @@ private fun remoteAgentSummary(
 private fun RemoteAgentSettingsPage(
     config: com.zhousl.aether.data.RemoteAgentConfig,
     status: com.zhousl.aether.runtime.remote.RemoteAgentUiStatus,
+    host: DshHostUiState,
+    onRefreshHost: () -> Unit,
+    onSetPluginEnabled: (String, Boolean) -> Unit,
     onSave: (com.zhousl.aether.data.RemoteAgentConfig) -> Unit,
     onTest: (com.zhousl.aether.data.RemoteAgentConfig) -> Unit,
     onBack: () -> Unit,
@@ -5122,6 +5134,14 @@ private fun RemoteAgentSettingsPage(
                 )
             }
         }
+
+        Spacer(Modifier.height(16.dp))
+
+        DshHostSection(
+            host = host,
+            onRefresh = onRefreshHost,
+            onSetPluginEnabled = onSetPluginEnabled,
+        )
 
         Spacer(Modifier.height(16.dp))
         Row(
