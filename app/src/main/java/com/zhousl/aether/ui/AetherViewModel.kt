@@ -2410,7 +2410,7 @@ class AetherViewModel(
             if (!config.isConfigured) return@launch
             val client = com.zhousl.aether.remote.RemoteAetherClient(config.copy(enabled = true))
             try {
-                client.dshSetPluginEnabled(id, enabled)
+                client.dshSetPluginEnabledJson(id, enabled)
                 refreshDshHost(force = true)
             } catch (error: Throwable) {
                 _dshHost.value = _dshHost.value.copy(

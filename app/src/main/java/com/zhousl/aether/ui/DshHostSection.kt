@@ -14,7 +14,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -31,9 +30,8 @@ fun DshHostSection(
     host: DshHostUiState,
     onRefresh: () -> Unit,
     onSetPluginEnabled: (String, Boolean) -> Unit,
-    modifier: Modifier = Modifier,
 ) {
-    SettingsCardGroup(modifier = modifier.fillMaxWidth()) {
+    SettingsCardGroup(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),

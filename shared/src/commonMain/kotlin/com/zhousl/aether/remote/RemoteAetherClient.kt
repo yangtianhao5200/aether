@@ -289,6 +289,10 @@ class RemoteAetherClient(
             put("enabled", enabled)
         })
 
+    /** Same as [dshSetPluginEnabled], returned as JSON text for the app module. */
+    suspend fun dshSetPluginEnabledJson(id: String, enabled: Boolean): String =
+        dshSetPluginEnabled(id, enabled).toString()
+
     /**
      * Sends a bridge frame (`run_turn`, `ping`, `abort`, …) to the server.
      * [line] is the exact newline-delimited JSON the local bridge would read.
