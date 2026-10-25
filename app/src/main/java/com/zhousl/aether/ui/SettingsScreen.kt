@@ -5584,7 +5584,6 @@ private fun RemoteAgentSettingsPage(
     onTest: (com.zhousl.aether.data.RemoteAgentConfig) -> Unit,
     onBack: () -> Unit,
 ) {
-    var enabled by remember(config) { mutableStateOf(config.enabled) }
     var serverUrl by remember(config) {
         mutableStateOf(TextFieldValue(config.serverUrl))
     }
@@ -5595,7 +5594,8 @@ private fun RemoteAgentSettingsPage(
     var autoReconnect by remember(config) { mutableStateOf(config.autoReconnect) }
 
     fun current(): com.zhousl.aether.data.RemoteAgentConfig = config.copy(
-        enabled = enabled,
+        // Remote is the only mode: a usable address and token are the opt-in.
+        enabled = true,
         serverUrl = serverUrl.text.trim(),
         token = token.text.trim(),
         workspace = workspace.text.trim().ifBlank { com.zhousl.aether.data.DefaultRemoteWorkspace },
@@ -5614,14 +5614,21 @@ private fun RemoteAgentSettingsPage(
 
         SettingsCardGroup {
             Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
-                SettingsToggleRow(
-                    title = "使用远程 Agent",
-                    subtitle = "关闭时仍在本机 Alpine 中运行",
-                    checked = enabled,
-                    onCheckedChange = {
-                        enabled = it
-                        onSave(current().copy(enabled = it))
+                DetailLine(
+                    label = "连接状态",
+                    value = when {
+                        status.isTesting -> "正在测试…"
+                        status.testOk == true -> "连接正常"
+                        status.testOk == false -> "连接失败"
+                        status.state == "connected" -> "已连接"
+                        status.state == "connecting" -> "连接中"
+                        status.state == "failed" -> "连接失败 · ${status.lastError.ifBlank { config.normalizedServerUrl() }}"
+                        else -> status.state.ifBlank { "未连接" }
                     },
+                )
+                DetailLine(
+                    label = "工作区",
+                    value = config.normalizedWorkspace(),
                 )
             }
             CardDivider()
