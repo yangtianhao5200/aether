@@ -153,6 +153,18 @@ curl -H "Authorization: Bearer <token>" http://<服务器IP>:8787/v1/info
 
 ---
 
+### 2.1 一步接入：粘贴连接串
+
+服务器现在会生成一条连接串（`GET /v1/pair`，或实时工作台里的「手机接入」卡片）：
+
+```
+aether://192.168.1.10:8787/v1/agent?token=<令牌>&workspace=default
+```
+
+手机端在引导的「连接你的 Agent」页点 **粘贴连接信息** 即可一次填好地址、令牌和
+工作区，无需逐项输入。也支持直接粘贴 JSON（
+`{"serverUrl":"...","token":"...","workspace":"..."}`）。
+
 ## 3. 验证清单
 
 | 检查项 | 预期结果 |
@@ -244,8 +256,8 @@ aether-server --host 0.0.0.0 --port 8787
 （`reasoning_effort`）都会同步过去；权限请求默认选 Harness 的 `allow_*` 选项，
 需要人工审批时应在 Harness 侧配置策略。
 
-> 注意：ACP 只承载标准语义（文本、思考、工具调用、用量）。Harness 网页端特有的
-> 计划/待办卡片不在 ACP 里，手机端目前显示为普通工具卡片。
+> Harness 的执行计划（`plan` / `plan_update`）会被翻译成独立的工具卡片，
+> 与工具调用、思考、文本一起按顺序显示。
 
 ---
 
