@@ -14,7 +14,19 @@ WEB_LOG=/tmp/dsh-web-restart.log
 DSH_BIN=/usr/local/bin/dsh
 
 echo "==> stopping the running dsh web (PID 1 of this container)"
-pkill -f 'dsh web' || true
+
+# No pkill in this image: find the processes by their command line in /proc.
+kill_dsh_web() {
+  for entry in /proc/[0-9]*; do
+    pid=${entry#/proc/}
+    [ -r "$entry/cmdline" ] || continue
+    if tr '\0' ' ' < "$entry/cmdline" 2>/dev/null | grep -q 'dsh web'; then
+      echo "   killing pid $pid"
+      kill "$pid" 2>/dev/null || true
+    fi
+  done
+}
+kill_dsh_web
 
 # Give the container a moment. If Docker restarts it (restart policy), the
 # original entrypoint boots the patched profile and the mount appears by itself.
