@@ -243,7 +243,7 @@ fun OnboardingRemoteAgentStep(
                     ) {
                         Text(stringResource(Res.string.onboarding_remote_continue))
                     }
-                    if (!config.isConfigured) {
+                    if (config.serverUrl.isBlank() || config.token.isBlank()) {
                         Text(
                             text = stringResource(Res.string.onboarding_remote_invalid),
                             style = MaterialTheme.typography.bodySmall,

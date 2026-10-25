@@ -276,8 +276,11 @@ fun OnboardingScreen(
                 },
                 onTest = { onTestRemoteAgentConfig(remoteAgentDraft) },
                 onComplete = {
-                    if (remoteAgentDraft.isConfigured) {
-                        onSaveRemoteAgentConfig(remoteAgentDraft)
+                    // Completing this step *is* the opt-in: `isConfigured` also
+                    // requires `enabled`, which a hand-filled draft never had.
+                    val draft = remoteAgentDraft
+                    if (draft.serverUrl.isNotBlank() && draft.token.isNotBlank()) {
+                        onSaveRemoteAgentConfig(draft.copy(enabled = true))
                         currentStep = OnboardingStep.ProviderSetup
                     }
                 },
