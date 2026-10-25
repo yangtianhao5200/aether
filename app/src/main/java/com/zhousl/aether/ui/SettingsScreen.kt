@@ -1422,37 +1422,9 @@ private fun SettingsHub(
                 )
                 CardDivider()
                 SettingsNavRow(
-                    icon = Icons.Rounded.Code,
-                    title = "Alpine",
-                    subtitle = if (alpineReady) { stringResource(R.string.settings_alpine_subtitle_ready) } else { stringResource(R.string.settings_alpine_subtitle_setup) },
-                    onClick = { onNavigate(SettingsPage.Alpine) },
-                )
-                CardDivider()
-                SettingsNavRow(
-                    icon = Icons.Rounded.Terminal,
-                    title = stringResource(R.string.settings_termux),
-                    subtitle = if (termuxReady) stringResource(R.string.settings_connected) else stringResource(R.string.settings_setup_required),
-                    onClick = { onNavigate(SettingsPage.Termux) },
-                )
-                if (showRuntimeDefaults) {
-                    CardDivider()
-                    SettingsNavRow(
-                        icon = Icons.Rounded.Check,
-                        title = stringResource(R.string.settings_runtime_defaults),
-                        subtitle = defaultRuntimeId?.displayName ?: stringResource(R.string.settings_runtime_defaults_hint),
-                        onClick = { onNavigate(SettingsPage.RuntimeDefaults) },
-                    )
-                }
-                CardDivider()
-                SettingsNavRow(
                     icon = LucideIcons.MousePointer2,
                     title = stringResource(R.string.settings_agent_mode),
-                    subtitle = if (termuxReady || alpineReady) {
-                        stringResource(R.string.settings_agent_mode_subtitle)
-                    } else {
-                        stringResource(R.string.settings_requires_runtime_setup)
-                    },
-                    enabled = termuxReady || alpineReady,
+                    subtitle = stringResource(R.string.settings_agent_mode_subtitle),
                     onClick = { onNavigate(SettingsPage.AgentMode) },
                 )
             }

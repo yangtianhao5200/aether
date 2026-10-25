@@ -84,6 +84,13 @@ rl.on("line", (line) => {
       prompts += 1;
       const sessionId = params.sessionId;
       const text = (params.prompt ?? []).map((block) => block.text ?? "").join("");
+      setTimeout(() => update(sessionId, {
+        sessionUpdate: "plan",
+        entries: [
+          { content: "read the request", priority: "high", status: "in_progress" },
+          { content: "reply", priority: "medium", status: "pending" },
+        ],
+      }), 8);
       setTimeout(() => update(sessionId, { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "planning" } }), 10);
       setTimeout(() => update(sessionId, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Hello " } }), 20);
       setTimeout(() => update(sessionId, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "from DSH" } }), 30);

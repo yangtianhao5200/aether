@@ -276,6 +276,36 @@ class DshRuntime {
           });
           return;
         }
+        case "plan":
+        case "plan_update": {
+          // Harness execution plans are shown as their own card in the app.
+          const entries = Array.isArray(update.entries) ? update.entries : [];
+          const payload = {
+            id: "plan",
+            name: "plan",
+            arguments: { entries },
+            arguments_json: JSON.stringify({ entries }),
+          };
+          writeEvent(
+            requestId,
+            asString(update.sessionUpdate) === "plan" ? "tool_call_start" : "tool_call_delta",
+            payload,
+          );
+          return;
+        }
+        case "plan_removed":
+          writeEvent(requestId, "tool_call_end", {
+            id: "plan",
+            name: "plan",
+            arguments: {},
+            arguments_json: "{}",
+            content: [],
+            output_json: "",
+            raw_output_json: "",
+            details: {},
+            is_error: false,
+          });
+          return;
         case "usage_update": {
           writeEvent(requestId, "context_usage", {
             used: update.used ?? null,

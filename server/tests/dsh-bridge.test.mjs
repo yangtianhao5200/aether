@@ -117,8 +117,17 @@ test("dsh bridge streams a turn as bridge events", async () => {
     const thought = await waitFor((frame) => frame.type === "event" && frame.event === "assistant_reasoning_delta");
     assert.equal(thought.payload.delta, "planning");
 
-    const toolStart = await waitFor((frame) => frame.type === "event" && frame.event === "tool_call_start");
-    assert.equal(toolStart.payload.name, "bash");
+    // The harness execution plan arrives as its own card.
+    const planStart = await waitFor((frame) => frame.type === "event" && frame.event === "tool_call_start");
+    assert.equal(planStart.payload.name, "plan");
+    assert.equal(planStart.payload.arguments.entries.length, 2);
+    assert.equal(planStart.payload.arguments.entries[0].status, "in_progress");
+
+    const toolStart = await waitFor(
+      (frame) => frame.type === "event"
+        && frame.event === "tool_call_start"
+        && frame.payload.name === "bash",
+    );
     assert.equal(toolStart.payload.arguments.command, "echo say hello");
 
     const toolEnd = await waitFor((frame) => frame.type === "event" && frame.event === "tool_call_end");
