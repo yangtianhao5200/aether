@@ -398,6 +398,7 @@ private fun RemoteAgentStep(
     onConfigChange: (com.zhousl.aether.data.RemoteAgentConfig) -> Unit,
     onTest: () -> Unit,
     onComplete: () -> Unit,
+    onPasteConnection: () -> Unit,
     onBack: () -> Unit,
 ) {
     com.zhousl.aether.ui.OnboardingRemoteAgentStep(
@@ -411,6 +412,7 @@ private fun RemoteAgentStep(
         onConfigChange = onConfigChange,
         onTest = onTest,
         onComplete = onComplete,
+        onPasteConnection = onPasteConnection,
         onBack = onBack,
     )
 }
