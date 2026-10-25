@@ -123,6 +123,44 @@ plugins:
 dsh plugin --profile web add /path/to/aether/server
 ```
 
+### Mount on the harness webserver (single public URL)
+
+`AETHER_RUNTIME=dsh` can run standalone (its own port) **or** be mounted on the
+DeepSeek Harness web server, so the phone uses the same public URL as the web GUI
+and no second port has to be exposed:
+
+```yaml
+# cordis.patch.yml of the web profile
+plugins:
+  aether-remote-server:
+    mountPath: /aether          # agent lives at <web-url>/aether
+    dataDir: /var/lib/aether
+    tokens:
+      - token: "<token>"
+        user: default
+```
+
+```bash
+dsh plugin --profile web add /path/to/aether/server
+```
+
+The phone then connects to:
+
+| | URL |
+|---|---|
+| HTTP (test / pairing) | `https://<web-host>/aether` |
+| WebSocket (app) | `wss://<web-host>/aether/v1/agent` |
+
+`AETHER_DSH_ARGS` must contain the launcher command line, because the ACP agent
+is started with the harness CLI, not with a plain node flag:
+
+```bash
+AETHER_DSH_ARGS="/usr/local/bin/node /path/to/dsh/lib/bin.js --profile acp --patch /path/to/patch.yml"
+```
+
+Use `--patch` to point the ACP profile at a provider route that actually holds
+credentials on that host, and `AETHER_DSH_HOME` to select the harness home.
+
 ### Run the agent on DeepSeek Harness instead of Pi
 
 `src/dsh-bridge/` implements the same bridge protocol on top of
