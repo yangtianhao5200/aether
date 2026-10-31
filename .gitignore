@@ -17,6 +17,8 @@ dist/
 *.ap_
 *.jks
 *.keystore
+# Committed signing identity for CI release builds (see build.yml).
+!app/release.keystore
 *.p12
 *.pem
 *.key

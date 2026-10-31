@@ -153,12 +153,14 @@ android {
                 keyAlias = releaseKeyAlias
                 keyPassword = releaseKeyPassword
             } else {
-                // Reuse the auto-generated debug key so CI still signs.
-                val debugConfig = signingConfigs.getByName("debug")
-                storeFile = debugConfig.storeFile
-                storePassword = debugConfig.storePassword
-                keyAlias = debugConfig.keyAlias
-                keyPassword = debugConfig.keyPassword
+                // The key committed to the repo keeps every CI build signed with
+                // the same identity, so an installed build can be upgraded in
+                // place. Set the RELEASE_KEYSTORE_* env/properties to sign with
+                // your own key instead.
+                storeFile = file("${rootDir}/app/release.keystore")
+                storePassword = "aether-release"
+                keyAlias = "aether"
+                keyPassword = "aether-release"
             }
         }
         create("nightly") {
