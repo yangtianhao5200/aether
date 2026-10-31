@@ -216,6 +216,10 @@ class SettingsRepository(
             onboardingCompletedVersion = preferences[ONBOARDING_COMPLETED_VERSION] ?: 0,
             privacyPolicyAccepted = preferences[PRIVACY_POLICY_ACCEPTED] ?: false,
             lastUpdateCheckAtMillis = preferences[LAST_UPDATE_CHECK_AT_MILLIS] ?: 0L,
+            // The remote agent host must survive a process restart. Without it
+            // the app forgets the server on every launch and the home screen
+            // keeps asking to connect an agent that was already configured.
+            remoteAgent = parseRemoteAgentConfig(preferences[REMOTE_AGENT_CONFIG_JSON].orEmpty()),
         )
     }
 
@@ -621,6 +625,9 @@ class SettingsRepository(
             it[PRIVACY_POLICY_ACCEPTED] =
                 (it[PRIVACY_POLICY_ACCEPTED] ?: false) || settings.privacyPolicyAccepted
             it[LAST_UPDATE_CHECK_AT_MILLIS] = settings.lastUpdateCheckAtMillis
+            // Persist the remote agent host together with the rest of the
+            // settings; dropping it here loses the server on every restart.
+            it[REMOTE_AGENT_CONFIG_JSON] = serializeRemoteAgentConfig(settings.remoteAgent)
         }
     }
 
@@ -737,7 +744,44 @@ class SettingsRepository(
         val ONBOARDING_COMPLETED_VERSION = intPreferencesKey("onboarding_completed_version")
         val PRIVACY_POLICY_ACCEPTED = booleanPreferencesKey("privacy_policy_accepted")
         val LAST_UPDATE_CHECK_AT_MILLIS = longPreferencesKey("last_update_check_at_millis")
+        val REMOTE_AGENT_CONFIG_JSON = stringPreferencesKey("remote_agent_config_json")
     }
+}
+
+/**
+ * Serializes the remote agent host into a single preference.
+ *
+ * Every other [AppSettings] field is stored in its own preference, so the
+ * remote host used to be dropped on save and the app forgot the server on the
+ * next launch. The home screen then kept showing the "connect your agent"
+ * card even though the connection string had been entered.
+ */
+internal fun serializeRemoteAgentConfig(config: RemoteAgentConfig): String =
+    JSONObject().apply {
+        put("enabled", config.enabled)
+        put("serverUrl", config.serverUrl)
+        put("token", config.token)
+        put("workspace", config.workspace)
+        put("autoReconnect", config.autoReconnect)
+        put("fallbackToLocal", config.fallbackToLocal)
+    }.toString()
+
+/** Restores the remote agent host; unknown or broken payloads fall back to the defaults. */
+internal fun parseRemoteAgentConfig(rawValue: String): RemoteAgentConfig {
+    if (rawValue.isBlank()) return RemoteAgentConfig()
+    return runCatching {
+        val json = JSONObject(rawValue)
+        RemoteAgentConfig(
+            enabled = json.optBoolean("enabled", false),
+            serverUrl = json.optString("serverUrl", ""),
+            token = json.optString("token", ""),
+            workspace = json.optString("workspace", DefaultRemoteWorkspace)
+                .takeIf { it.isNotBlank() }
+                ?: DefaultRemoteWorkspace,
+            autoReconnect = json.optBoolean("autoReconnect", true),
+            fallbackToLocal = json.optBoolean("fallbackToLocal", true),
+        )
+    }.getOrDefault(RemoteAgentConfig())
 }
 
 private fun parseStringArray(rawValue: String): List<String> {
