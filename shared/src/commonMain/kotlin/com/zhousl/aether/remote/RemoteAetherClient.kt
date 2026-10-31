@@ -389,6 +389,13 @@ class RemoteAetherClient(
         }
     }
 
+    /** String-typed [dshStream] so the app module (no kotlinx types) can use it. */
+    fun dshStreamJson(endpoint: String, argsJson: String): Flow<String> {
+        val args = runCatching { Json.parseToJsonElement(argsJson).jsonObject }
+            .getOrElse { JsonObject(emptyMap()) }
+        return dshStream(endpoint, args).map { it.toString() }
+    }
+
     suspend fun dshRpcJson(namespace: String, method: String, argsJson: String): String {
         val args = runCatching { Json.parseToJsonElement(argsJson).jsonObject }.getOrNull()
             ?: buildJsonObject { }

@@ -1115,7 +1115,7 @@ fun SettingsScreen(
                 onSaveSettings = onSaveDshSettings,
                 onLoadModels = onLoadDshModels,
                 onLoadConfiguration = onLoadDshConfiguration,
-                onBack = { onNavigate(SettingsPage.Hub) },
+                onBack = { currentPage = SettingsPage.Hub.name },
             )
             SettingsPage.RemoteAgent -> RemoteAgentSettingsPage(
                 config = remoteAgentConfig,

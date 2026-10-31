@@ -364,7 +364,7 @@ class DshChatController(
         activeAttempt?.optJSONArray("stream")?.let { stream ->
             for (i in 0 until stream.length()) {
                 val item = stream.optJSONObject(i) ?: continue
-                applyStreamChunk(item.optJSONObject("chunk") ?: item)
+                applyChunk(item.optJSONObject("chunk") ?: item)
             }
         }
         applyingSnapshot = false

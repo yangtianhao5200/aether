@@ -108,21 +108,15 @@ class RemoteAgentHost(
     }
 
     /**
-     * Subscribe to one harness stream (`session/follow`) through the server
-     * relay. Emits each frame's `value` as JSON text.
+     * Subscribe to one harness stream (`session/follow`) over the agent socket.
+     * Emits each frame's `value` as JSON text; the turn itself runs server-side.
      */
-    fun dshStreamJson(endpoint: String, argsJson: String): kotlinx.coroutines.flow.Flow<String> {
-        val target = config
-        if (!target.isConfigured) return kotlinx.coroutines.flow.emptyFlow()
-        val args = runCatching {
-            kotlinx.serialization.json.Json.parseToJsonElement(argsJson)
-                as? kotlinx.serialization.json.JsonObject
-        }.getOrNull() ?: kotlinx.serialization.json.JsonObject(emptyMap())
-        return kotlinx.coroutines.flow.flow {
+    fun dshStreamJson(endpoint: String, argsJson: String): kotlinx.coroutines.flow.Flow<String> =
+        kotlinx.coroutines.flow.flow {
+            if (!config.isConfigured) return@flow
             val client = activeClient() ?: return@flow
-            client.dshStream(endpoint, args).collect { frame -> emit(frame.toString()) }
+            client.dshStreamJson(endpoint, argsJson).collect { emit(it) }
         }
-    }
 
     fun disconnect() {
         val active = client ?: return
