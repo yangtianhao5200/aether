@@ -1,21 +1,16 @@
-# Point the ACP profile at the same provider the web profile uses on this host.
-- id: llm-pi-ai
-  config:
-    providers:
-      inside:
-        apiKeyEnv: INSIDE_API_KEY
-        api: openai-completions
-        baseURL: https://freeshare.cc.cd/v1
-        models:
-          - id: deepseek-v4.1-flash
-            name: deepseek-v4.1-flash
-            contextWindow: 1000000
-            input: [text, image]
+# The ACP profile runs the agent for the Aether phone app.
+#
+# The provider routes are merged in from the host's web profile when the
+# harness is started (see server/src/dsh-bridge/acp-patch.mjs), so the phone's
+# model list and the agent's routes always agree and every route the phone can
+# pick resolves its credential. What is left here are the defaults of the ACP
+# profile itself; they are replaced by the host's default model whenever the
+# host's web profile names a route this profile does not have.
 - id: agent-default-model
   config:
-    provider: inside
-    model: deepseek-v4.1-flash
+    provider: deepseek-official
+    model: deepseek-v4-flash
 - id: acp
   config:
-    provider: inside
-    model: deepseek-v4.1-flash
+    provider: deepseek-official
+    model: deepseek-v4-flash

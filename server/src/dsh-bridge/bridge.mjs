@@ -3,6 +3,7 @@ import path from "node:path";
 import readline from "node:readline";
 import { normalizeDshArgs } from "../config.mjs";
 import { dshHostInfo, readProfilePatch, setProfilePluginEnabled } from "../dsh-host.mjs";
+import { buildAcpPatch } from "./acp-patch.mjs";
 import { AcpClient } from "./acp-client.mjs";
 
 const BRIDGE_VERSION = "aether-dsh-bridge/1.0.0";
@@ -50,6 +51,42 @@ function lastUserText(messages) {
     if (text) return text;
   }
   return "";
+}
+
+/**
+ * The ACP profile gets the host's provider routes.
+ *
+ * The phone chooses a model from the host catalog and the agent runs in the
+ * ACP profile, so the two have to serve the same routes; otherwise the turn
+ * fails with "no credential for provider route ...". The configured patch is
+ * therefore merged with the host's web profile before the harness is started.
+ */
+function resolveDshArgs({ args, dshHome, outDir, log }) {
+  const patchIndex = args.indexOf("--patch");
+  if (!dshHome || patchIndex < 0 || patchIndex + 1 >= args.length) return args;
+  // The routes come from the host's *web* profile — the one whose catalog the
+  // phone reads — while `--profile` names the profile the agent runs in.
+  const profile = process.env.AETHER_DSH_HOST_PROFILE || "web";
+  const outPath = path.join(outDir, "acp-profile.patch.yml");
+  try {
+    const result = buildAcpPatch({
+      dshHome,
+      profile,
+      patchPath: args[patchIndex + 1],
+      outPath,
+      log: (level, event, details) => log(`[${event}] ${JSON.stringify(details ?? {})}`),
+    });
+    log(
+      `[acp_patch] provider routes: ${result.routes.join(", ") || "none"}; ` +
+        `default model: ${result.defaultModel ? `${result.defaultModel.provider}/${result.defaultModel.model}` : "unchanged"}`,
+    );
+    const next = [...args];
+    next[patchIndex + 1] = result.path;
+    return next;
+  } catch (error) {
+    log(`[acp_patch] cannot merge the host provider routes: ${error?.message ?? error}`);
+    return args;
+  }
 }
 
 class DshRuntime {
@@ -362,11 +399,17 @@ class DshRuntime {
 
 async function main() {
   const cwd = process.env.AETHER_WORKSPACE_DIR || process.cwd();
+  const log = (line) => process.stderr.write(`${line}\n`);
   // AETHER_DSH_COMMAND is the harness launcher (default: `dsh` on PATH) and
   // AETHER_DSH_ARGS its flags only, e.g. "--profile acp --patch patch.yml".
   const runtime = new DshRuntime({
     command: process.env.AETHER_DSH_COMMAND || process.env.AETHER_DSH_NODE || "dsh",
-    args: normalizeDshArgs(process.env.AETHER_DSH_ARGS || "--profile acp").split(" ").filter(Boolean),
+    args: resolveDshArgs({
+      args: normalizeDshArgs(process.env.AETHER_DSH_ARGS || "--profile acp").split(" ").filter(Boolean),
+      dshHome: process.env.AETHER_DSH_HOME || process.env.DSH_HOME || "",
+      outDir: path.join(process.env.HOME || cwd, ".aether"),
+      log,
+    }),
     env: {
       ...(process.env.AETHER_DSH_HOME || process.env.DSH_HOME
         ? { DSH_HOME: process.env.AETHER_DSH_HOME || process.env.DSH_HOME }
@@ -376,7 +419,7 @@ async function main() {
       OPENAI_BASE_URL: process.env.OPENAI_BASE_URL || "",
     },
     cwd,
-    log: (line) => process.stderr.write(`${line}\n`),
+    log,
   });
 
   const rl = readline.createInterface({ input: process.stdin });

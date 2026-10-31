@@ -43,7 +43,12 @@ export class BridgeHost extends EventEmitter {
   }
 
   get running() {
-    return Boolean(this.child && this.child.exitCode === null && !this.child.killed);
+    const child = this.child;
+    if (!child || child.killed) return false;
+    // A child that died from a signal keeps `exitCode === null`, so the signal
+    // has to be checked too: otherwise a killed bridge still looks alive and is
+    // never started again.
+    return child.exitCode === null && child.signalCode === null;
   }
 
   status() {
