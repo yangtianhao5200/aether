@@ -918,7 +918,13 @@ private fun AetherAppContent(
                         target = AetherExtensionComponentChatScreen,
                         modifier = Modifier.fillMaxSize(),
                     ) {
-                        if (uiState.settings.remoteAgent.isConfigured) {
+                        if (uiState.settings.remoteAgent.isConfigured &&
+                            uiState.settings.remoteAgent.useNativeDshChat
+                        ) {
+                            // Native mode: the harness owns the conversation and
+                            // the phone is a thin send/receive client.
+                            DshChatScreen(controller = viewModel.dshChatController)
+                        } else if (uiState.settings.remoteAgent.isConfigured) {
                         ConversationScreen(
                     conversationStateKey = uiState.currentSessionId,
                     messages = currentMessages,
@@ -1064,6 +1070,10 @@ private fun AetherAppContent(
                     dshHost = dshHost,
                     onRefreshDshHost = { viewModel.refreshDshHost(force = true) },
                     onSetDshPluginEnabled = viewModel::setDshPluginEnabled,
+                    onLoadDshSettings = viewModel::loadDshSettings,
+                    onSaveDshSettings = viewModel::saveDshSettings,
+                    onLoadDshModels = viewModel::loadDshModelCatalog,
+                    onLoadDshConfiguration = viewModel::loadDshConfiguration,
                     agentWorkspaceMode = uiState.settings.agentWorkspaceMode,
                     autoCleanOldCommandHistory =
                         uiState.settings.autoCleanOldCommandHistory,

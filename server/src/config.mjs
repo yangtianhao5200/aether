@@ -110,6 +110,13 @@ export function loadConfig(argv = process.argv.slice(2), env = process.env, cwd 
       (env.AETHER_RUNTIME?.trim() === "dsh" ? defaultDshBridgePath : defaultBridgePath),
     dshBridgePath: env.AETHER_DSH_BRIDGE?.trim() || defaultDshBridgePath,
     dshHome: env.AETHER_DSH_HOME?.trim() || env.DSH_HOME?.trim() || "",
+    // The harness's own web origin (native /api RPC) and the launch token the
+    // app never sees: the gateway holds the browser cookie for it. The default
+    // token is the one this DeepSeek Harness build ships; override it with
+    // AETHER_DSH_LAUNCH_TOKEN (or the plugin's `dshLaunchToken`) on other hosts.
+    dshWebUrl: env.AETHER_DSH_WEB_URL?.trim() || "http://127.0.0.1:3081",
+    dshLaunchToken:
+      env.AETHER_DSH_LAUNCH_TOKEN?.trim() || "bmZ9DnEbqR_Q5Ziuqamr5b0C_yAroGLW",
     dshCommand: env.AETHER_DSH_COMMAND?.trim() || env.AETHER_DSH_NODE?.trim() || "dsh",
     dshArgs: normalizeDshArgs(env.AETHER_DSH_ARGS?.trim() || "--profile acp"),
     nodePath: env.AETHER_NODE?.trim() || process.execPath,

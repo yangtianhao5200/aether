@@ -781,6 +781,8 @@ internal fun serializeRemoteAgentConfig(config: RemoteAgentConfig): String =
         put("workspace", config.workspace)
         put("autoReconnect", config.autoReconnect)
         put("fallbackToLocal", config.fallbackToLocal)
+        put("dshAccessToken", config.dshAccessToken)
+        put("useNativeDshChat", config.useNativeDshChat)
     }.toString()
 
 /** Restores the remote agent host; unknown or broken payloads fall back to the defaults. */
@@ -797,6 +799,9 @@ internal fun parseRemoteAgentConfig(rawValue: String): RemoteAgentConfig {
                 ?: DefaultRemoteWorkspace,
             autoReconnect = json.optBoolean("autoReconnect", true),
             fallbackToLocal = json.optBoolean("fallbackToLocal", true),
+            dshAccessToken = json.optString("dshAccessToken", DefaultDshAccessToken)
+                .takeIf { it.isNotBlank() } ?: DefaultDshAccessToken,
+            useNativeDshChat = json.optBoolean("useNativeDshChat", true),
         )
     }.getOrDefault(RemoteAgentConfig())
 }

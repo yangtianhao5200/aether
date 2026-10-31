@@ -67,6 +67,7 @@ import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Terminal
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material.icons.rounded.WbSunny
@@ -228,6 +229,7 @@ private enum class SettingsPage {
     AddScheduledTask,
     EditScheduledTask,
     RemoteAgent,
+    DshConfig,
     AgentMode,
     Statistics,
     VirtualDisplayAuthorization,
@@ -248,6 +250,7 @@ private fun SettingsPage.depth(): Int = when (this) {
     SettingsPage.Extensions,
     SettingsPage.ScheduledTasks,
     SettingsPage.RemoteAgent,
+    SettingsPage.DshConfig,
     SettingsPage.AgentMode,
     SettingsPage.Statistics,
     SettingsPage.Developer,
@@ -396,6 +399,10 @@ fun SettingsScreen(
     dshHost: DshHostUiState,
     onRefreshDshHost: () -> Unit,
     onSetDshPluginEnabled: (String, Boolean) -> Unit,
+    onLoadDshSettings: () -> Unit = {},
+    onSaveDshSettings: (String, Map<String, String>) -> Unit = { _, _ -> },
+    onLoadDshModels: () -> Unit = {},
+    onLoadDshConfiguration: () -> Unit = {},
     agentWorkspaceMode: AgentWorkspaceMode,
     autoCleanOldCommandHistory: Boolean,
     oldCommandHistoryRetentionHours: Int,
@@ -1102,6 +1109,14 @@ fun SettingsScreen(
             )
 
 
+            SettingsPage.DshConfig -> DshConfigPage(
+                host = dshHost,
+                onLoadSettings = onLoadDshSettings,
+                onSaveSettings = onSaveDshSettings,
+                onLoadModels = onLoadDshModels,
+                onLoadConfiguration = onLoadDshConfiguration,
+                onBack = { onNavigate(SettingsPage.Hub) },
+            )
             SettingsPage.RemoteAgent -> RemoteAgentSettingsPage(
                 config = remoteAgentConfig,
                 status = remoteAgentStatus,
@@ -1325,6 +1340,15 @@ private fun SettingsHub(
                     subtitle = remoteAgentSummary(remoteAgentConfig, remoteAgentStatus),
                     onClick = { onNavigate(SettingsPage.RemoteAgent) },
                 )
+                if (remoteAgentConfig.isConfigured) {
+                    CardDivider()
+                    SettingsNavRow(
+                        icon = Icons.Rounded.Tune,
+                        title = "DSH 主机设置",
+                        subtitle = "模型 · 权限 · 预设 · 设置项 · 插件",
+                        onClick = { onNavigate(SettingsPage.DshConfig) },
+                    )
+                }
             }
 
             Spacer(Modifier.height(16.dp))
@@ -5071,6 +5095,10 @@ private fun RemoteAgentSettingsPage(
         mutableStateOf(TextFieldValue(config.workspace))
     }
     var autoReconnect by remember(config) { mutableStateOf(config.autoReconnect) }
+    var dshToken by remember(config) {
+        mutableStateOf(TextFieldValue(config.dshAccessToken))
+    }
+    var useNativeChat by remember(config) { mutableStateOf(config.useNativeDshChat) }
 
     fun current(): com.zhousl.aether.data.RemoteAgentConfig = config.copy(
         // Remote is the only mode: a usable address and token are the opt-in.
@@ -5079,6 +5107,9 @@ private fun RemoteAgentSettingsPage(
         token = token.text.trim(),
         workspace = workspace.text.trim().ifBlank { com.zhousl.aether.data.DefaultRemoteWorkspace },
         autoReconnect = autoReconnect,
+        dshAccessToken = dshToken.text.trim()
+            .ifBlank { com.zhousl.aether.data.DefaultDshAccessToken },
+        useNativeDshChat = useNativeChat,
     )
 
     SubPageScaffold(title = "远程 Agent", onBack = onBack) {
@@ -5135,12 +5166,28 @@ private fun RemoteAgentSettingsPage(
                 onValueChange = { workspace = it },
             )
             CardDivider()
+            ChatGptTextField(
+                label = "DSH 访问令牌",
+                value = dshToken,
+                isSecret = true,
+                placeholder = com.zhousl.aether.data.DefaultDshAccessToken,
+                supportingText = "用于手机端直连 DeepSeek Harness 原生 /api（配置、插件、会话续流）。默认值适用于当前 host，换主机时改这里。",
+                onValueChange = { dshToken = it },
+            )
+            CardDivider()
             Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
                 SettingsToggleRow(
                     title = "自动重连",
                     subtitle = "网络切换或服务器重启后自动恢复",
                     checked = autoReconnect,
                     onCheckedChange = { autoReconnect = it },
+                )
+                CardDivider()
+                SettingsToggleRow(
+                    title = "云端会话（推荐）",
+                    subtitle = "对话在服务器的 DSH 会话里运行，手机可随时断开再连回同一会话；关闭则使用实时桥接通道。",
+                    checked = useNativeChat,
+                    onCheckedChange = { useNativeChat = it },
                 )
             }
         }
@@ -5712,7 +5759,7 @@ private fun AboutInfoRow(
 }
 
 @Composable
-private fun SubPageScaffold(
+internal fun SubPageScaffold(
     title: String,
     onBack: () -> Unit,
     trailingIcon: ImageVector? = null,

@@ -5,7 +5,8 @@ import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
 import { extractToken } from "./auth.mjs";
 import { PROTOCOL_VERSION, SERVER_VERSION } from "./config.mjs";
-import { dshHostInfo, readProfilePatch, setProfilePluginEnabled } from "./dsh-host.mjs";
+import { dshHostInfo, readProfilePatch, readComposedProfile, setProfilePluginEnabled } from "./dsh-host.mjs";
+import { dshRpc } from "./dsh-rpc.mjs";
 
 const publicDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "public");
 
@@ -124,6 +125,46 @@ export function createAetherHttpServer({ config, registry, tokens, log }) {
           });
         }
       }
+      if (pathname === "/v1/dsh/composed") {
+        requireIdentity(request, url, pathname);
+        try {
+          return sendJson(response, 200, readComposedProfile({
+            dshHome: config.dshHome?.trim() || "",
+            profile: url.searchParams.get("profile") || "web",
+          }));
+        } catch (error) {
+          return sendJson(response, error.code === "dsh_profile_missing" ? 404 : 400, {
+            error: error.code ?? "dsh_error",
+            message: String(error.message ?? error),
+          });
+        }
+      }
+      if (pathname === "/v1/dsh/rpc" && request.method === "POST") {
+        requireIdentity(request, url, pathname);
+        const body = await readJsonBody(request);
+        try {
+          const result = await dshRpc({
+            base: config.dshWebUrl?.trim() || "",
+            launchToken: String(body.launch_token ?? "").trim() || config.dshLaunchToken?.trim() || "",
+            namespace: String(body.namespace ?? ""),
+            method: String(body.method ?? ""),
+            args: body.args && typeof body.args === "object" ? body.args : {},
+          });
+          // Mirror the harness envelope so the app parses one shape everywhere.
+          return sendJson(response, result.ok ? 200 : 200, result.ok
+            ? { ok: true, value: result.value }
+            : { ok: false, error: result.error });
+        } catch (error) {
+          const status = error.code === "dsh_not_found" ? 404
+            : error.code === "dsh_auth" ? 401
+            : error.code === "dsh_bad_request" ? 400
+            : 502;
+          return sendJson(response, status, {
+            ok: false,
+            error: { code: error.code ?? "dsh_error", message: String(error.message ?? error) },
+          });
+        }
+      }
       if (pathname === "/v1/info") {
         const identity = requireIdentity(request, url, pathname);
         return sendJson(response, 200, {
@@ -134,8 +175,7 @@ export function createAetherHttpServer({ config, registry, tokens, log }) {
           workspaces: await registry.workspaceStore.list(identity.user),
           bridges: [...registry.hubs.values()].map((hub) => hub.bridge.status()),
         });
-      }
-      if (pathname === "/v1/workspaces") {
+      }      if (pathname === "/v1/workspaces") {
         const identity = requireIdentity(request, url, pathname);
         if (request.method === "GET") {
           return sendJson(response, 200, {

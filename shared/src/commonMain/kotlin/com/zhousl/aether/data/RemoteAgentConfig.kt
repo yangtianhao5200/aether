@@ -20,6 +20,18 @@ data class RemoteAgentConfig(
     val autoReconnect: Boolean = true,
     /** Keep the local Alpine runtime available as a fallback. */
     val fallbackToLocal: Boolean = true,
+    /**
+     * The DeepSeek Harness access token the server's RPC gateway uses to reach
+     * the harness's own `/api`. It is optional: the server falls back to its
+     * configured token. A blank value keeps the server default.
+     */
+    val dshAccessToken: String = DefaultDshAccessToken,
+    /**
+     * Use the harness's own conversation (native sessions) instead of the
+     * realtime bridge. Native mode keeps the turn server-side and lets the
+     * phone disconnect and reconnect to the same session.
+     */
+    val useNativeDshChat: Boolean = true,
 ) {
     val isConfigured: Boolean
         get() = enabled && serverUrl.trim().isNotEmpty() && token.trim().isNotEmpty()
@@ -34,6 +46,9 @@ data class RemoteAgentConfig(
 }
 
 const val DefaultRemoteWorkspace = "default"
+
+/** The launch token this DeepSeek Harness build ships; overridable in Settings. */
+const val DefaultDshAccessToken = "bmZ9DnEbqR_Q5Ziuqamr5b0C_yAroGLW"
 
 /**
  * Accepts bare hosts (`192.168.1.10:8787`), full URLs and WebSocket URLs, and
@@ -51,6 +66,10 @@ fun normalizeRemoteServerUrl(value: String): String {
     }
     return withScheme.removeSuffix("/v1/agent").trimEnd('/')
 }
+
+/** `ws(s)://host:port/v1/dsh/stream` — the harness stream relay endpoint. */
+fun remoteDshStreamUrl(normalizedBaseUrl: String): String =
+    remoteWebSocketUrl(normalizedBaseUrl).removeSuffix("/v1/agent") + "/v1/dsh/stream"
 
 fun remoteWebSocketUrl(normalizedBaseUrl: String): String {
     if (normalizedBaseUrl.isEmpty()) return ""

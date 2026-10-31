@@ -39,6 +39,8 @@ export class WorkspaceHub {
             AETHER_DSH_COMMAND: config.dshCommand ?? "dsh",
             AETHER_DSH_ARGS: config.dshArgs ?? "--profile acp",
             AETHER_MOUNT_PATH: config.mountPath ?? "",
+            AETHER_DSH_WEB_URL: config.dshWebUrl ?? "",
+            AETHER_DSH_LAUNCH_TOKEN: config.dshLaunchToken ?? "",
           }
         : {},
       log,

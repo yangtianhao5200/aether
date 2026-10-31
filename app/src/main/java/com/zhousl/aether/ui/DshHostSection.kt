@@ -125,7 +125,11 @@ fun DshHostSection(
                                 overflow = TextOverflow.Ellipsis,
                             )
                             Text(
-                                text = plugin.id,
+                                text = buildString {
+                                    append(plugin.id)
+                                    if (plugin.patched) append(" · 已在 patch 覆盖")
+                                    if (plugin.conditional) append(" · 由条件控制")
+                                },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = AetherOnSurfaceVariant,
                                 maxLines = 1,
@@ -136,7 +140,11 @@ fun DshHostSection(
                             title = "",
                             subtitle = "",
                             checked = plugin.enabled,
-                            onCheckedChange = { checked -> onSetPluginEnabled(plugin.id, checked) },
+                            // A `!!js` condition owns this plugin; a manual toggle
+                            // would be overridden on the next reload.
+                            onCheckedChange = { checked ->
+                                if (!plugin.conditional) onSetPluginEnabled(plugin.id, checked)
+                            },
                         )
                     }
                 }

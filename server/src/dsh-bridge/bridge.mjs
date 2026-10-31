@@ -2,7 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
 import { normalizeDshArgs } from "../config.mjs";
-import { dshHostInfo, readProfilePatch, setProfilePluginEnabled } from "../dsh-host.mjs";
+import { dshHostInfo, readProfilePatch, readComposedProfile, setProfilePluginEnabled } from "../dsh-host.mjs";
+import { dshRpc, openDshStream } from "../dsh-rpc.mjs";
 import { buildAcpPatch } from "./acp-patch.mjs";
 import { AcpClient } from "./acp-client.mjs";
 
@@ -99,6 +100,8 @@ class DshRuntime {
     this.client = null;
     this.catalog = null;
     this.sessions = new Map();
+    /** requestId -> live harness stream handles relayed to the app. */
+    this.streams = new Map();
     this.stateFile = path.join(cwd, ".aether-dsh-sessions.json");
     this.persisted = this.#loadState();
   }
@@ -147,6 +150,42 @@ class DshRuntime {
   /** Active prompt sink, set while a `run_turn` is streaming. */
   setSink(sink) {
     this.sink = sink;
+  }
+
+  /**
+   * Open one harness stream (`session/follow`) on behalf of the app and relay
+   * every `item` frame back over the agent socket, under the request id. The
+   * app therefore never needs the harness cookie or a second socket.
+   */
+  async openStream(requestId, payload, writeEvent, writeResponse) {
+    const endpoint = asString(payload.endpoint);
+    if (!endpoint) {
+      writeError(requestId, "dsh_stream_open needs an endpoint.", "bad_request");
+      return;
+    }
+    const handle = await openDshStream({
+      base: process.env.AETHER_DSH_WEB_URL || "http://127.0.0.1:3081",
+      launchToken: process.env.AETHER_DSH_LAUNCH_TOKEN || "bmZ9DnEbqR_Q5Ziuqamr5b0C_yAroGLW",
+      endpoint,
+      args: asObject(payload.args),
+      onItem: (value) => writeEvent(requestId, "dsh_stream", value),
+      onEnd: () => writeEvent(requestId, "dsh_stream_end", {}),
+      onError: (error) =>
+        writeEvent(requestId, "dsh_stream_error", { message: String(error?.message ?? error) }),
+    });
+    this.streams.set(requestId, handle);
+    writeResponse(requestId, { opened: true, endpoint });
+  }
+
+  cancelStream(requestId) {
+    const handle = this.streams.get(requestId);
+    if (!handle) {
+      writeResponse(requestId, { cancelled: false });
+      return;
+    }
+    this.streams.delete(requestId);
+    handle.cancel();
+    writeResponse(requestId, { cancelled: true });
   }
 
   #onUpdate(params) {
@@ -417,6 +456,8 @@ async function main() {
       DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY || "",
       OPENAI_API_KEY: process.env.OPENAI_API_KEY || "",
       OPENAI_BASE_URL: process.env.OPENAI_BASE_URL || "",
+      AETHER_DSH_WEB_URL: process.env.AETHER_DSH_WEB_URL || "",
+      AETHER_DSH_LAUNCH_TOKEN: process.env.AETHER_DSH_LAUNCH_TOKEN || "",
     },
     cwd,
     log,
@@ -521,6 +562,33 @@ async function main() {
             enabled: payload.enabled === true,
           }));
           return;
+        case "dsh_composed_profile":
+          writeResponse(id, readComposedProfile({
+            dshHome: process.env.AETHER_DSH_HOME || process.env.DSH_HOME || "",
+            profile: asString(payload.profile) || "web",
+          }));
+          return;
+        case "dsh_rpc": {
+          const result = await dshRpc({
+            base: process.env.AETHER_DSH_WEB_URL || "http://127.0.0.1:3081",
+            // The app may carry its own harness token; prefer it, else the
+            // server's configured token.
+            launchToken: asString(payload.launch_token)
+              || process.env.AETHER_DSH_LAUNCH_TOKEN
+              || "bmZ9DnEbqR_Q5Ziuqamr5b0C_yAroGLW",
+            namespace: asString(payload.namespace),
+            method: asString(payload.method),
+            args: asObject(payload.args),
+          });
+          writeResponse(id, result);
+          return;
+        }
+        case "dsh_stream_open":
+          await runtime.openStream(id, payload, writeEvent, writeResponse);
+          return;
+        case "dsh_stream_cancel":
+          runtime.cancelStream(asString(payload.stream_id) || id);
+          return;
         case "list_discovered_skills":
           writeResponse(id, { skills: [] });
           return;
@@ -537,6 +605,7 @@ async function main() {
   });
   rl.on("close", () => {
     runtime.client?.dispose();
+    for (const handle of runtime.streams.values()) handle.cancel();
     process.exit(0);
   });
 }

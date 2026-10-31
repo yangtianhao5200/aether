@@ -53,6 +53,10 @@ export function apply(ctx, config = {}) {
       || (runtime === "dsh" ? dshBridgePath : defaultBridgePath),
     runtime,
     dshHome: config.dshHome ?? process.env.AETHER_DSH_HOME ?? process.env.DSH_HOME ?? "",
+    // Native /api RPC gateway: the harness's own origin and its launch token.
+    dshWebUrl: config.dshWebUrl ?? process.env.AETHER_DSH_WEB_URL ?? "http://127.0.0.1:3081",
+    dshLaunchToken:
+      config.dshLaunchToken ?? process.env.AETHER_DSH_LAUNCH_TOKEN ?? "bmZ9DnEbqR_Q5Ziuqamr5b0C_yAroGLW",
     dshCommand: config.dshCommand ?? process.env.AETHER_DSH_COMMAND ?? process.env.AETHER_DSH_NODE ?? "dsh",
     dshArgs: normalizeDshArgs(config.dshArgs?.trim() || process.env.AETHER_DSH_ARGS?.trim() || "--profile acp"),
     nodePath: config.nodePath ?? process.env.AETHER_NODE ?? process.execPath,

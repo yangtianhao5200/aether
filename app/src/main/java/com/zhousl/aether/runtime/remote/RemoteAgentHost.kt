@@ -85,6 +85,45 @@ class RemoteAgentHost(
         return target
     }
 
+    /** The live client, connecting on demand; null when remote mode is off. */
+    suspend fun activeClient(): RemoteAetherClient? {
+        if (!isActive) return null
+        return runCatching { connect() }.getOrNull()
+    }
+
+    /**
+     * One DeepSeek Harness native RPC (`session/list`, `settings/describe`, …).
+     * Returns the harness envelope `{ok, value|error}` as JSON text, or null
+     * when remote mode is off / unreachable.
+     */
+    suspend fun dshRpc(namespace: String, method: String, argsJson: String = "{}"): String? {
+        val client = activeClient() ?: return null
+        return runCatching { client.dshRpcJson(namespace, method, argsJson) }.getOrNull()
+    }
+
+    /** The full composed plugin tree the host loads, as JSON text. */
+    suspend fun composedProfileJson(): String? {
+        val client = activeClient() ?: return null
+        return runCatching { client.dshComposedProfileJson() }.getOrNull()
+    }
+
+    /**
+     * Subscribe to one harness stream (`session/follow`) through the server
+     * relay. Emits each frame's `value` as JSON text.
+     */
+    fun dshStreamJson(endpoint: String, argsJson: String): kotlinx.coroutines.flow.Flow<String> {
+        val target = config
+        if (!target.isConfigured) return kotlinx.coroutines.flow.emptyFlow()
+        val args = runCatching {
+            kotlinx.serialization.json.Json.parseToJsonElement(argsJson)
+                as? kotlinx.serialization.json.JsonObject
+        }.getOrNull() ?: kotlinx.serialization.json.JsonObject(emptyMap())
+        return kotlinx.coroutines.flow.flow {
+            val client = activeClient() ?: return@flow
+            client.dshStream(endpoint, args).collect { frame -> emit(frame.toString()) }
+        }
+    }
+
     fun disconnect() {
         val active = client ?: return
         client = null

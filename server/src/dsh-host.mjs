@@ -172,3 +172,153 @@ export function dshHostInfo({ dshHome, profile = "web", mountPath = "" }) {
     node: process.version,
   };
 }
+
+/**
+ * A `!!js` tag in the composed profile is an expression the harness evaluates
+ * in its own context (e.g. `!ctx.get('profileContext')`). We cannot evaluate it
+ * here, so it is kept as an opaque string the app shows as "conditional".
+ */
+const JsExpression = new yaml.Type("tag:yaml.org,2002:js", {
+  kind: "scalar",
+  construct: (data) => ({ __jsExpression: String(data) }),
+});
+
+const composedSchema = yaml.DEFAULT_SCHEMA.extend([JsExpression]);
+
+/** True when a value is one of the composed profile's `!!js` expressions. */
+function isJsExpression(value) {
+  return Boolean(value && typeof value === "object" && typeof value.__jsExpression === "string");
+}
+
+/**
+ * The composed plugin tree of a profile, from `cordis.yml`.
+ *
+ * `cordis.patch.yml` only holds this machine's overrides (a handful of rows),
+ * while `cordis.yml` is the full tree the harness actually loads — every
+ * bundle's plugins plus the patch. The app lists *this* so the plugin page
+ * shows what is really running, and reports patch overrides alongside.
+ */
+export function readComposedProfile({ dshHome = process.env.DSH_HOME || "/home/dsh/.dsh", profile = "web" } = {}) {
+  const dir = path.join(dshHome, "profiles", profile);
+  const composedFile = path.join(dir, "cordis.yml");
+  const patchFile = path.join(dir, "cordis.patch.yml");
+
+  let raw = "";
+  try {
+    raw = fs.readFileSync(composedFile, "utf8");
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      const wrapped = new Error(`No composed harness profile at ${composedFile}.`);
+      wrapped.code = "dsh_profile_missing";
+      throw wrapped;
+    }
+    throw error;
+  }
+
+  let document;
+  try {
+    document = yaml.load(raw, { schema: composedSchema }) ?? [];
+  } catch (error) {
+    const wrapped = new Error(`Cannot parse ${composedFile}: ${error.message}`);
+    wrapped.code = "dsh_profile_invalid";
+    throw wrapped;
+  }
+
+  const plugins = [];
+  const visit = (entries) => {
+    if (!Array.isArray(entries)) return;
+    for (const entry of entries) {
+      if (!entry || typeof entry !== "object") continue;
+      if (Array.isArray(entry.insert)) {
+        visit(entry.insert);
+        continue;
+      }
+      const id = typeof entry.id === "string" ? entry.id : "";
+      if (!id) continue;
+      const name = typeof entry.name === "string" ? entry.name : "";
+      // How the plugin is switched: explicit true/false, or a condition the
+      // harness evaluates (`!!js`).
+      let enabled;
+      let conditional = false;
+      if (isJsExpression(entry.disabled)) {
+        conditional = true;
+        enabled = false;
+      } else {
+        enabled = entry.disabled !== true;
+      }
+      const config = entry.config && typeof entry.config === "object" ? entry.config : {};
+      plugins.push({
+        id,
+        name,
+        enabled,
+        conditional,
+        // The npm package a plugin mounts (for the app's subtitle / grouping).
+        package: name.split("/")[0] === "@deepseek-ai" ? name : name || id,
+        config_keys: Object.keys(config),
+      });
+    }
+  };
+  visit(document);
+
+  // Patch rows override the composed entry with the same id (or add one).
+  const patch = readProfilePatchSafely(patchFile);
+  const patchById = new Map(patch.map((row) => [row.id, row]));
+  for (const plugin of plugins) {
+    const override = patchById.get(plugin.id);
+    if (!override) continue;
+    plugin.patch = true;
+    // A patch row with `disabled: true` turns the plugin off; one without it
+    // turns it on (that is how the web Plugins page writes the override).
+    plugin.enabled = override.disabled !== true;
+    plugin.conditional = false;
+  }
+  const composedIds = new Set(plugins.map((plugin) => plugin.id));
+  for (const row of patch) {
+    if (composedIds.has(row.id)) continue;
+    plugins.push({
+      id: row.id,
+      name: row.name,
+      enabled: !row.disabled,
+      conditional: false,
+      package: row.name || row.id,
+      patch: true,
+      inserted: true,
+      config_keys: Object.keys(row.config ?? {}),
+    });
+  }
+
+  return {
+    profile,
+    file: composedFile,
+    patch_file: patchFile,
+    profile_exists: true,
+    total: plugins.length,
+    enabled: plugins.filter((plugin) => plugin.enabled).length,
+    plugins,
+  };
+}
+
+function readProfilePatchSafely(file) {
+  try {
+    const document = yaml.load(fs.readFileSync(file, "utf8")) ?? [];
+    return summarizeEntries(document, "patch").map((row) => ({
+      id: row.id,
+      name: row.name,
+      disabled: row.disabled,
+      config: row.config,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Enable/disable a plugin in the composed profile.
+ *
+ * The composed `cordis.yml` is regenerated from the bundles, so the durable
+ * place for an override is `cordis.patch.yml`: writing there survives a
+ * regeneration and hot-reloads the same way the web Models page does.
+ */
+export function setComposedPluginEnabled({ dshHome = process.env.DSH_HOME || "/home/dsh/.dsh", profile = "web", id, enabled } = {}) {
+  return setProfilePluginEnabled({ dshHome, profile, id, enabled });
+}

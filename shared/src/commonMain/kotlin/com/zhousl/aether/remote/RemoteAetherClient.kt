@@ -16,6 +16,7 @@ import io.ktor.websocket.close
 import io.ktor.websocket.readText
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.io.encoding.Base64
+import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -31,6 +32,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -293,6 +295,106 @@ class RemoteAetherClient(
     suspend fun dshSetPluginEnabledJson(id: String, enabled: Boolean): String =
         dshSetPluginEnabled(id, enabled).toString()
 
+    /** The full composed plugin tree the host actually loads (not just its patch). */
+    suspend fun dshComposedProfile(): JsonObject = request("dsh_composed_profile", buildJsonObject { })
+
+    suspend fun dshComposedProfileJson(): String = dshComposedProfile().toString()
+
+    /**
+     * One DeepSeek Harness native RPC call (`session/prompt`, `settings/describe`, …).
+     * The server holds the harness cookie so the phone needs only its own token.
+     */
+    suspend fun dshRpc(
+        namespace: String,
+        method: String,
+        args: JsonObject = buildJsonObject { },
+    ): JsonObject = request(
+        "dsh_rpc",
+        buildJsonObject {
+            put("namespace", namespace)
+            put("method", method)
+            put("args", args)
+            // The phone may carry its own harness token; the gateway prefers it
+            // over the server's configured one when present.
+            val launch = config.dshAccessToken.trim()
+            if (launch.isNotEmpty()) put("launch_token", launch)
+        },
+        timeoutMillis = 180_000L,
+    )
+
+    /**
+     * Subscribe to one harness stream (`session/follow`) over the same agent
+     * socket. The server's bridge opens the harness mux stream and relays every
+     * `item` as a `dsh_stream` event for the open request; the flow ends on
+     * `dsh_stream_end`/`dsh_stream_error` or when the socket drops.
+     */
+    fun dshStream(endpoint: String, args: JsonObject): Flow<JsonObject> = callbackFlow {
+        val current = config
+        if (!current.isConfigured) {
+            close(RemoteAgentException("Remote mode is not configured.", "not_configured"))
+            return@callbackFlow
+        }
+        val streamId = "dshstream-" + platformRandomUuid().take(8)
+        val collector = scope.launch {
+            try {
+                frames.collect { frame ->
+                    val type = (frame["type"] as? JsonPrimitive)?.contentOrNull
+                    val id = (frame["id"] as? JsonPrimitive)?.contentOrNull
+                    if (type != "event" || id != streamId) return@collect
+                    when ((frame["event"] as? JsonPrimitive)?.contentOrNull) {
+                        "dsh_stream" -> (frame["payload"] as? JsonObject)?.let { trySend(it) }
+                        "dsh_stream_end" -> close()
+                        "dsh_stream_error" -> {
+                            val message = (frame["payload"] as? JsonObject)
+                                ?.get("message")?.jsonPrimitive?.contentOrNull.orEmpty()
+                            close(RemoteAgentException(message.ifBlank { "The DSH stream failed." }, "stream"))
+                        }
+                    }
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                close(error)
+            }
+        }
+        scope.launch {
+            val opened = runCatching {
+                request(
+                    "dsh_stream_open",
+                    buildJsonObject {
+                        put("endpoint", endpoint)
+                        put("args", args)
+                    },
+                    id = streamId,
+                    timeoutMillis = 60_000L,
+                )
+            }
+            opened.exceptionOrNull()?.let { error ->
+                collector.cancel()
+                close(error)
+                return@launch
+            }
+        }
+        awaitClose {
+            collector.cancel()
+            scope.launch {
+                runCatching {
+                    request(
+                        "dsh_stream_cancel",
+                        buildJsonObject { put("stream_id", streamId) },
+                        timeoutMillis = 10_000L,
+                    )
+                }
+            }
+        }
+    }
+
+    suspend fun dshRpcJson(namespace: String, method: String, argsJson: String): String {
+        val args = runCatching { Json.parseToJsonElement(argsJson).jsonObject }.getOrNull()
+            ?: buildJsonObject { }
+        return dshRpc(namespace, method, args).toString()
+    }
+
     /**
      * Sends a bridge frame (`run_turn`, `ping`, `abort`, …) to the server.
      * [line] is the exact newline-delimited JSON the local bridge would read.
@@ -308,9 +410,9 @@ class RemoteAetherClient(
         type: String,
         payload: JsonObject = JsonObject(emptyMap()),
         timeoutMillis: Long = 60_000L,
+        id: String = "srv-${platformRandomUuid()}",
     ): JsonObject {
         ensureConnected()
-        val id = "srv-${platformRandomUuid()}"
         val deferred = CompletableDeferred<JsonObject>()
         stateMutex.withLock { pending[id] = deferred }
         try {

@@ -218,6 +218,14 @@ class AetherViewModel(
         _remoteAgentStatus.asStateFlow()
 
     /** DeepSeek Harness host facts: plugins, provider routes, CLI version. */
+    /**
+     * The DSH-native conversation (remote mode): prompts and streams go
+     * straight to the harness session, so the turn runs on the server.
+     */
+    val dshChatController: com.zhousl.aether.runtime.remote.DshChatController by lazy {
+        com.zhousl.aether.runtime.remote.DshChatController(runtime.remoteAgentHost)
+    }
+
     private val _dshHost = MutableStateFlow(DshHostUiState())
     val dshHost: StateFlow<DshHostUiState> = _dshHost.asStateFlow()
     val transientMessages = _transientMessages.asSharedFlow()
@@ -2441,6 +2449,13 @@ class AetherViewModel(
                 val pluginsJson = runCatching { client.dshPluginsJson() }
                     .getOrNull()?.let { org.json.JSONObject(it) }
                 val providers = parseDshProviders(pluginsJson)
+                // The composed tree is what the host really loads (every
+                // bundle plugin + this profile's patch), so the plugin page
+                // shows the whole instance instead of just the patch rows.
+                val composed = runCatching { client.dshComposedProfileJson() }
+                    .getOrNull()?.let { org.json.JSONObject(it) }
+                val plugins = parseDshComposedProfile(composed)
+                    .ifEmpty { parseDshPlugins(pluginsJson) }
                 _dshHost.value = DshHostUiState(
                     loaded = true,
                     isLoading = false,
@@ -2449,7 +2464,7 @@ class AetherViewModel(
                     mountPath = host.optString("mount_path"),
                     dshVersion = host.optString("dsh_version"),
                     managementAvailable = host.optBoolean("management", false),
-                    plugins = parseDshPlugins(pluginsJson),
+                    plugins = plugins,
                     providers = providers,
                 )
                 // Remember the host's models so the chat can use them (and so
@@ -2488,6 +2503,99 @@ class AetherViewModel(
                 runCatching { client.close() }
                 client.dispose()
             }
+        }
+    }
+
+    /** Load the host's settings schema so the phone can edit them. */
+    fun loadDshSettings() {
+        if (_dshHost.value.settingsLoading) return
+        viewModelScope.launch {
+            _dshHost.value = _dshHost.value.copy(settingsLoading = true, settingsError = "")
+            val json = runtime.remoteAgentHost.dshRpc("settings", "describe", "{}")
+            if (json == null) {
+                _dshHost.value = _dshHost.value.copy(
+                    settingsLoading = false,
+                    settingsError = "无法读取 DSH 设置（远程未连接）。",
+                )
+                return@launch
+            }
+            val root = runCatching { org.json.JSONObject(json) }.getOrNull()
+            val value = root?.optJSONObject("value") ?: root
+            _dshHost.value = _dshHost.value.copy(
+                settingsLoading = false,
+                settings = parseDshSettingsDescribe(value),
+                settingsError = if (root?.optBoolean("ok") == false) {
+                    root.optJSONObject("error")?.optString("message").orEmpty()
+                } else {
+                    ""
+                },
+            )
+        }
+    }
+
+    /** Write one settings namespace (`settings/set`) and reload the schema. */
+    fun saveDshSettings(namespace: String, fields: Map<String, String>) {
+        if (namespace.isBlank()) return
+        viewModelScope.launch {
+            _dshHost.value = _dshHost.value.copy(settingsSavingNs = namespace, settingsError = "")
+            val args = org.json.JSONObject().put("ns", namespace).put(
+                "value",
+                org.json.JSONObject().apply { fields.forEach { (k, v) -> put(k, v) } },
+            )
+            val json = runtime.remoteAgentHost.dshRpc("settings", "set", args.toString())
+            val error = json?.let { org.json.JSONObject(it) }?.takeIf { !it.optBoolean("ok", true) }
+                ?.optJSONObject("error")?.optString("message").orEmpty()
+            _dshHost.value = _dshHost.value.copy(settingsSavingNs = "")
+            if (error.isNotBlank()) {
+                _dshHost.value = _dshHost.value.copy(settingsError = error)
+            } else {
+                loadDshSettings()
+            }
+        }
+    }
+
+    /** The host model catalog (`session/modelCatalog`) for the config page. */
+    fun loadDshModelCatalog() {
+        if (_dshHost.value.configModelsLoading) return
+        viewModelScope.launch {
+            _dshHost.value = _dshHost.value.copy(configModelsLoading = true, configModelsError = "")
+            val json = runtime.remoteAgentHost.dshRpc("session", "modelCatalog", "{}")
+            val root = json?.let { runCatching { org.json.JSONObject(it) }.getOrNull() }
+            val value = root?.optJSONObject("value") ?: root
+            _dshHost.value = _dshHost.value.copy(
+                configModelsLoading = false,
+                configModels = parseDshModelCatalog(value),
+                configModelsError = if (root?.optBoolean("ok") == false) {
+                    root.optJSONObject("error")?.optString("message").orEmpty()
+                } else {
+                    ""
+                },
+            )
+        }
+    }
+
+    /** Permission presets, agent presets and workspaces, in one refresh. */
+    fun loadDshConfiguration() {
+        viewModelScope.launch {
+            val permissions = runtime.remoteAgentHost.dshRpc("permissionPresets", "catalog", "{}")
+                ?.let { runCatching { org.json.JSONObject(it) }.getOrNull() }
+            val presets = runtime.remoteAgentHost.dshRpc("agentPresets", "list", "{}")
+                ?.let { runCatching { org.json.JSONObject(it) }.getOrNull() }
+            val workspaces = runtime.remoteAgentHost.dshRpc("workspace", "list", "{}")
+                ?.let { runCatching { org.json.JSONObject(it) }.getOrNull() }
+            fun values(root: org.json.JSONObject?, array: String, field: String): List<String> {
+                val value = root?.optJSONObject("value") ?: root ?: return emptyList()
+                val arr = value.optJSONArray(array) ?: return emptyList()
+                return (0 until arr.length()).mapNotNull { index ->
+                    val row = arr.optJSONObject(index) ?: return@mapNotNull null
+                    row.optString(field).ifBlank { null }
+                }
+            }
+            _dshHost.value = _dshHost.value.copy(
+                permissionOptions = values(permissions, "options", "value"),
+                agentPresets = values(presets, "presets", "id"),
+                workspaces = values(workspaces, "items", "workspaceId"),
+            )
         }
     }
 
