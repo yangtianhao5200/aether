@@ -765,6 +765,7 @@ fun SettingsScreen(
 
             SettingsPage.Providers -> ProvidersListPage(
                 providerConfigs = providerConfigs,
+                remoteMode = remoteAgentConfig.isConfigured,
                 onSetProviderEnabled = onSetProviderEnabled,
                 onOpenDefaultModels = { currentPage = SettingsPage.DefaultModels.name },
                 onEdit = { id ->
@@ -1353,53 +1354,60 @@ private fun SettingsHub(
 
             Spacer(Modifier.height(16.dp))
 
-            // Extensions card
-            SettingsCardGroup {
-                SettingsNavRow(
-                    icon = Icons.Rounded.Extension,
-                    title = stringResource(R.string.settings_agent_skills),
-                    subtitle = stringResource(R.string.settings_skills_count_configured, skillCount),
-                    onClick = { onNavigate(SettingsPage.Skills) },
-                )
-                CardDivider()
-                SettingsNavRow(
-                    iconPainter = painterResource(R.drawable.pi_logo_on_light),
-                    title = stringResource(R.string.settings_pi_extensions),
-                    subtitle = if (piExtensionsLoaded) {
-                        stringResource(
-                            R.string.settings_pi_extensions_count_configured,
-                            piExtensionCount,
-                        )
-                    } else {
-                        stringResource(R.string.settings_loading_installed_extensions)
-                    },
-                    onClick = { onNavigate(SettingsPage.Extensions) },
-                )
-                CardDivider()
-                SettingsNavRow(
-                    icon = Icons.Rounded.Schedule,
-                    title = stringResource(R.string.settings_scheduled_tasks),
-                    subtitle = stringResource(R.string.settings_scheduled_tasks_count_configured, scheduledTaskCount),
-                    onClick = { onNavigate(SettingsPage.ScheduledTasks) },
-                )
-                CardDivider()
-                SettingsNavRow(
-                    icon = LucideIcons.MousePointer2,
-                    title = stringResource(R.string.settings_agent_mode),
-                    subtitle = stringResource(R.string.settings_agent_mode_subtitle),
-                    onClick = { onNavigate(SettingsPage.AgentMode) },
-                )
+            // Device-local capabilities (skills, Pi extensions, scheduled
+            // tasks, phone-use agent mode) run on this phone only. When the
+            // agent runs on a remote DSH host they have no effect, so the hub
+            // hides them instead of offering dead switches.
+            if (!remoteAgentConfig.isConfigured) {
+                SettingsCardGroup {
+                    SettingsNavRow(
+                        icon = Icons.Rounded.Extension,
+                        title = stringResource(R.string.settings_agent_skills),
+                        subtitle = stringResource(R.string.settings_skills_count_configured, skillCount),
+                        onClick = { onNavigate(SettingsPage.Skills) },
+                    )
+                    CardDivider()
+                    SettingsNavRow(
+                        iconPainter = painterResource(R.drawable.pi_logo_on_light),
+                        title = stringResource(R.string.settings_pi_extensions),
+                        subtitle = if (piExtensionsLoaded) {
+                            stringResource(
+                                R.string.settings_pi_extensions_count_configured,
+                                piExtensionCount,
+                            )
+                        } else {
+                            stringResource(R.string.settings_loading_installed_extensions)
+                        },
+                        onClick = { onNavigate(SettingsPage.Extensions) },
+                    )
+                    CardDivider()
+                    SettingsNavRow(
+                        icon = Icons.Rounded.Schedule,
+                        title = stringResource(R.string.settings_scheduled_tasks),
+                        subtitle = stringResource(R.string.settings_scheduled_tasks_count_configured, scheduledTaskCount),
+                        onClick = { onNavigate(SettingsPage.ScheduledTasks) },
+                    )
+                    CardDivider()
+                    SettingsNavRow(
+                        icon = LucideIcons.MousePointer2,
+                        title = stringResource(R.string.settings_agent_mode),
+                        subtitle = stringResource(R.string.settings_agent_mode_subtitle),
+                        onClick = { onNavigate(SettingsPage.AgentMode) },
+                    )
+                }
             }
 
             Spacer(Modifier.height(16.dp))
 
-            SettingsCardGroup {
-                SettingsNavRow(
-                    icon = LucideIcons.ChartNoAxesColumn,
-                    title = stringResource(R.string.settings_statistics),
-                    subtitle = statisticsSummary.ifBlank { stringResource(R.string.settings_statistics_empty) },
-                    onClick = { onNavigate(SettingsPage.Statistics) },
-                )
+            if (!remoteAgentConfig.isConfigured) {
+                SettingsCardGroup {
+                    SettingsNavRow(
+                        icon = LucideIcons.ChartNoAxesColumn,
+                        title = stringResource(R.string.settings_statistics),
+                        subtitle = statisticsSummary.ifBlank { stringResource(R.string.settings_statistics_empty) },
+                        onClick = { onNavigate(SettingsPage.Statistics) },
+                    )
+                }
             }
 
             Spacer(Modifier.height(16.dp))
@@ -2152,6 +2160,7 @@ private fun GeneralSettingsPageV2(
 @Composable
 private fun ProvidersListPage(
     providerConfigs: List<LlmProviderConfig>,
+    remoteMode: Boolean = false,
     onSetProviderEnabled: (String, Boolean) -> Unit,
     onOpenDefaultModels: () -> Unit,
     onEdit: (String) -> Unit,
@@ -2162,10 +2171,34 @@ private fun ProvidersListPage(
     SubPageScaffold(
         title = stringResource(R.string.settings_model_providers),
         onBack = onBack,
-        trailingIcon = Icons.Rounded.Add,
-        onTrailingAction = onAddNew,
+        // In remote mode the DSH host owns provider credentials; adding or
+        // editing a provider on the phone does nothing, so the button is gone.
+        trailingIcon = if (remoteMode) null else Icons.Rounded.Add,
+        onTrailingAction = if (remoteMode) null else onAddNew,
     ) {
-        if (providerConfigs.isEmpty()) {
+        if (remoteMode) {
+            SettingsCardGroup {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                ) {
+                    Text(
+                        text = "模型提供方由远程 DSH 主机管理",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = AetherOnSurface,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = "无需在手机端配置提供方或填写密钥。可在下方选择默认使用的模型。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = AetherOnSurfaceVariant,
+                    )
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+        }
+        if (!remoteMode && providerConfigs.isEmpty()) {
             SettingsCardGroup {
                 Column(
                     modifier = Modifier
@@ -2191,7 +2224,7 @@ private fun ProvidersListPage(
                     )
                 }
             }
-        } else {
+        } else if (!remoteMode) {
             providerConfigs.forEach { config ->
                 ProviderCard(
                     config = config,

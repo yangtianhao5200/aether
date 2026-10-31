@@ -2888,6 +2888,10 @@ class AetherViewModel(
         val option = current.chatModelOptions
             .firstOrNull { it.key == modelKey }
             ?: return onResolved(false)
+        // Remote models are served by the DSH host; probing the public
+        // thinking catalog from the phone would hit an unreachable provider
+        // and stall the switch. Skip it entirely.
+        if (option.providerConfigId.startsWith("remote-")) return onResolved(false)
         val cacheKey = thinkingCatalogKey(option.piProviderId, option.modelId)
         current.thinkingLevelsByProviderModel[cacheKey]?.let { levels ->
             onResolved(levels.isNotEmpty())
@@ -2911,6 +2915,7 @@ class AetherViewModel(
         val option = current.chatModelOptions
             .firstOrNull { it.key == selectedModelKey }
             ?: return
+        if (option.providerConfigId.startsWith("remote-")) return
         viewModelScope.launch {
             applyThinkingCatalog(ProviderModelCatalogClient.fetchPublicThinkingCatalog(listOf(option)))
         }
