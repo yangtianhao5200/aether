@@ -228,6 +228,22 @@ class SettingsRepository(
         parseProviderConfigs(preferences[PROVIDER_CONFIGS].orEmpty())
     }
 
+    /**
+     * The models the connected remote agent host exposes.
+     *
+     * Cached so the chat can offer the host's models right after a restart,
+     * before the host answered the first catalog request.
+     */
+    val remoteModelCatalog: Flow<RemoteModelCatalog> = context.dataStore.data.map { preferences ->
+        RemoteModelCatalog.parse(preferences[REMOTE_MODEL_CATALOG_JSON].orEmpty())
+    }
+
+    suspend fun saveRemoteModelCatalog(catalog: RemoteModelCatalog) {
+        context.dataStore.edit { preferences ->
+            preferences[REMOTE_MODEL_CATALOG_JSON] = catalog.toJson()
+        }
+    }
+
     suspend fun migrateLegacyProvidersToPi() {
         context.dataStore.edit { prefs ->
             val rawConfigs = prefs[PROVIDER_CONFIGS].orEmpty()
@@ -745,6 +761,7 @@ class SettingsRepository(
         val PRIVACY_POLICY_ACCEPTED = booleanPreferencesKey("privacy_policy_accepted")
         val LAST_UPDATE_CHECK_AT_MILLIS = longPreferencesKey("last_update_check_at_millis")
         val REMOTE_AGENT_CONFIG_JSON = stringPreferencesKey("remote_agent_config_json")
+        val REMOTE_MODEL_CATALOG_JSON = stringPreferencesKey("remote_model_catalog_json")
     }
 }
 

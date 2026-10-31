@@ -1,5 +1,24 @@
 package com.zhousl.aether.data
 
+/**
+ * The models the chat may use.
+ *
+ * In remote mode the agent runs on the DeepSeek Harness host, which already
+ * owns the provider routes, the credentials and the models. The phone then
+ * offers the host's catalog instead of the locally configured providers, so no
+ * second provider setup is needed.
+ */
+fun effectiveModelOptions(
+    settings: AppSettings,
+    providerConfigs: List<LlmProviderConfig>,
+    remoteModelOptions: List<ProviderModelOption> = emptyList(),
+): List<ProviderModelOption> =
+    if (settings.remoteAgent.isConfigured && remoteModelOptions.isNotEmpty()) {
+        remoteModelOptions
+    } else {
+        providerConfigs.availableModelOptions()
+    }
+
 fun normalizeSelectableModelKey(
     modelKey: String,
     options: List<ProviderModelOption>,
@@ -23,8 +42,9 @@ fun resolveStoredOrAutomaticModelKey(
 fun resolveDefaultChatModelKey(
     settings: AppSettings,
     providerConfigs: List<LlmProviderConfig>,
+    remoteModelOptions: List<ProviderModelOption> = emptyList(),
 ): String {
-    val options = providerConfigs.availableModelOptions()
+    val options = effectiveModelOptions(settings, providerConfigs, remoteModelOptions)
     return resolveStoredOrAutomaticModelKey(
         modelKey = settings.defaultChatModelKey,
         options = options,
@@ -35,8 +55,9 @@ fun resolveDefaultChatModelKey(
 fun resolveDefaultTitleModelKey(
     settings: AppSettings,
     providerConfigs: List<LlmProviderConfig>,
+    remoteModelOptions: List<ProviderModelOption> = emptyList(),
 ): String {
-    val options = providerConfigs.availableModelOptions()
+    val options = effectiveModelOptions(settings, providerConfigs, remoteModelOptions)
     return resolveStoredOrAutomaticModelKey(
         modelKey = settings.defaultTitleModelKey,
         options = options,
@@ -48,8 +69,9 @@ fun resolveDefaultTitleModelKey(
 fun resolveDefaultNamingModelKey(
     settings: AppSettings,
     providerConfigs: List<LlmProviderConfig>,
+    remoteModelOptions: List<ProviderModelOption> = emptyList(),
 ): String {
-    val options = providerConfigs.availableModelOptions()
+    val options = effectiveModelOptions(settings, providerConfigs, remoteModelOptions)
     return resolveStoredOrAutomaticModelKey(
         modelKey = settings.defaultNamingModelKey,
         options = options,
@@ -61,8 +83,9 @@ fun resolveDefaultNamingModelKey(
 fun resolveDefaultCompactingModelKey(
     settings: AppSettings,
     providerConfigs: List<LlmProviderConfig>,
+    remoteModelOptions: List<ProviderModelOption> = emptyList(),
 ): String {
-    val options = providerConfigs.availableModelOptions()
+    val options = effectiveModelOptions(settings, providerConfigs, remoteModelOptions)
     return resolveStoredOrAutomaticModelKey(
         modelKey = settings.defaultCompactingModelKey,
         options = options,
@@ -93,12 +116,20 @@ fun resolveModelSettings(
     providerConfigs: List<LlmProviderConfig>,
     preferredModelKey: String,
     fallbackModelKey: String,
+    remoteModelOptions: List<ProviderModelOption> = emptyList(),
 ): AppSettings {
-    val options = providerConfigs.availableModelOptions()
+    val options = effectiveModelOptions(baseSettings, providerConfigs, remoteModelOptions)
     val selectedOption = options.findModelOption(preferredModelKey)
         ?: options.firstOrNull { it.modelId == preferredModelKey }
         ?: options.firstOrNull { it.fullLabel == preferredModelKey }
         ?: options.findModelOption(fallbackModelKey)
         ?: options.firstOrNull()
-    return selectedOption?.let(baseSettings::withModelOption) ?: baseSettings
+    if (selectedOption != null) return baseSettings.withModelOption(selectedOption)
+    // Remote mode without a known host model: send no model at all so the
+    // harness keeps using the model it is configured with.
+    return if (baseSettings.remoteAgent.isConfigured) {
+        baseSettings.copy(modelId = "", apiKey = "", oauthCredentialJson = "")
+    } else {
+        baseSettings
+    }
 }

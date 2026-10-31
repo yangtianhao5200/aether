@@ -203,6 +203,8 @@ class SessionExecutionManager(
     private val skillRuntimeMirror = SkillRuntimeMirror(runtimeRouter)
     private val currentSettings = MutableStateFlow(AppSettings())
     private val currentProviderConfigs = MutableStateFlow<List<LlmProviderConfig>>(emptyList())
+    /** Models the remote harness host exposes; empty in local mode. */
+    private val currentRemoteModelOptions = MutableStateFlow<List<ProviderModelOption>>(emptyList())
     private val currentExtensionsState = MutableStateFlow(AgentExtensionsState())
     private val _executionStates = MutableStateFlow<Map<String, SessionExecutionState>>(emptyMap())
     private val _turnEvents = MutableSharedFlow<SessionTurnEvent>(extraBufferCapacity = 8)
@@ -281,6 +283,11 @@ class SessionExecutionManager(
         }
         scope.launch {
             settingsRepository.providerConfigs.collect { currentProviderConfigs.value = it }
+        }
+        scope.launch {
+            settingsRepository.remoteModelCatalog.collect { catalog ->
+                currentRemoteModelOptions.value = catalog.toModelOptions()
+            }
         }
     }
 
@@ -436,6 +443,7 @@ class SessionExecutionManager(
         if (!task.isEnabled || task.prompt.isBlank()) return false
         val settings = settingsRepository.settings.first()
         val providerConfigs = settingsRepository.providerConfigs.first()
+        val remoteModelOptions = settingsRepository.remoteModelCatalog.first().toModelOptions()
         val sessionId = task.defaultSessionId()
         val now = System.currentTimeMillis()
         val userMessage = ChatMessage(
@@ -479,7 +487,7 @@ class SessionExecutionManager(
                     preview = userMessage.summaryText(),
                     hasCustomTitle = true,
                     messages = listOf(userMessage),
-                    selectedModelKey = resolveDefaultChatModelKey(settings, providerConfigs),
+                    selectedModelKey = resolveDefaultChatModelKey(settings, providerConfigs, remoteModelOptions),
                 )
             }
             selectedModelKey = updatedSession.selectedModelKey
@@ -503,7 +511,8 @@ class SessionExecutionManager(
                     baseSettings = settings,
                     providerConfigs = providerConfigs,
                     preferredModelKey = selectedModelKey,
-                    fallbackModelKey = resolveDefaultChatModelKey(settings, providerConfigs),
+                    fallbackModelKey = resolveDefaultChatModelKey(settings, providerConfigs, remoteModelOptions),
+                    remoteModelOptions = remoteModelOptions,
                 ),
                 requestMessages = requestMessages,
                 selectedSkillIds = selectedSkillIds,
@@ -1096,6 +1105,7 @@ class SessionExecutionManager(
             baseMessages = handle.retainedMessagesSnapshot(),
             baseSettings = currentSettings.value,
             providerConfigs = currentProviderConfigs.value,
+            remoteModelOptions = currentRemoteModelOptions.value,
         )
         request?.let { handle.replaceRetainedMessages(it.requestMessages) }
         return request
@@ -1845,6 +1855,10 @@ class SessionExecutionManager(
     }
 
     private fun validateSettings(settings: AppSettings): String? = when {
+        // In remote mode the harness host owns the providers and the
+        // credentials, so there is nothing local to validate.
+        settings.remoteAgent.isConfigured -> null
+
         !settings.isProviderSetupValid() ->
             "The selected provider is not fully configured."
 
@@ -2494,13 +2508,15 @@ class SessionExecutionManager(
     ): ReasoningSummary? {
         val settings = currentSettings.value
         val providerConfigs = currentProviderConfigs.value
+        val remoteModelOptions = currentRemoteModelOptions.value
         val titleSettings = resolveModelSettings(
             baseSettings = settings,
             providerConfigs = providerConfigs,
-            preferredModelKey = resolveDefaultTitleModelKey(settings, providerConfigs),
-            fallbackModelKey = resolveDefaultChatModelKey(settings, providerConfigs),
+            preferredModelKey = resolveDefaultTitleModelKey(settings, providerConfigs, remoteModelOptions),
+            fallbackModelKey = resolveDefaultChatModelKey(settings, providerConfigs, remoteModelOptions),
+            remoteModelOptions = remoteModelOptions,
         )
-        if (!titleSettings.isProviderSetupValid()) {
+        if (!titleSettings.remoteAgent.isConfigured && !titleSettings.isProviderSetupValid()) {
             return null
         }
         val modelKey = thinkingCatalogKey(titleSettings.piProviderId, titleSettings.modelId)

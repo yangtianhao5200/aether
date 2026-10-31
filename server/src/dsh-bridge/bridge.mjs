@@ -174,8 +174,12 @@ class DshRuntime {
     const values = (modelOption?.options ?? []).flatMap((group) =>
       (group.options ?? []).map((model) => asString(model.value)),
     );
-    const provider = asString(asObject(modelConfig).provider);
-    const model = asString(asObject(modelConfig).model);
+    // The app's `model_config` frame uses the pi-bridge field names
+    // (`pi_provider_id` / `model_id`); accept the short ACP names too and fall
+    // back to matching by model id when the route id differs from the ACP group.
+    const config = asObject(modelConfig);
+    const provider = asString(config.provider) || asString(config.pi_provider_id);
+    const model = asString(config.model) || asString(config.model_id);
     let value = "";
     if (provider && model) {
       const joined = JSON.stringify([provider, model]);
@@ -346,8 +350,10 @@ class DshRuntime {
       reasoning_text: reasoningText,
       usage: usagePayload,
       stop_reason: asString(result?.stopReason),
-      provider: asString(asObject(payload.model_config).provider),
-      model: asString(asObject(payload.model_config).model),
+      provider: asString(asObject(payload.model_config).provider)
+        || asString(asObject(payload.model_config).pi_provider_id),
+      model: asString(asObject(payload.model_config).model)
+        || asString(asObject(payload.model_config).model_id),
       runtime: "dsh",
       cwd: this.cwd,
     };

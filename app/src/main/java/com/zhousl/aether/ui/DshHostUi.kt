@@ -1,5 +1,8 @@
 package com.zhousl.aether.ui
 
+import com.zhousl.aether.data.RemoteHostModel
+import com.zhousl.aether.data.RemoteHostProvider
+import com.zhousl.aether.data.RemoteModelCatalog
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -85,3 +88,31 @@ internal fun parseDshProviders(payload: org.json.JSONObject?): List<DshProviderR
         )
     }
 }
+
+/**
+ * The host's provider routes as a model catalog the chat can use.
+ *
+ * Remote mode runs the agent on the harness, so these models — not a local
+ * provider setup — are what the composer offers.
+ */
+internal fun List<DshProviderRoute>.toRemoteModelCatalog(): RemoteModelCatalog =
+    RemoteModelCatalog(
+        providers = mapNotNull { route ->
+            val id = route.id.trim()
+            if (id.isBlank()) return@mapNotNull null
+            RemoteHostProvider(
+                id = id,
+                name = id,
+                baseUrl = route.baseUrl,
+                models = route.models.mapNotNull { model ->
+                    val modelId = model.id.trim()
+                    if (modelId.isBlank()) return@mapNotNull null
+                    RemoteHostModel(
+                        id = modelId,
+                        name = model.name.trim(),
+                        contextWindow = model.contextWindow,
+                    )
+                },
+            )
+        },
+    )

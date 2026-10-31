@@ -13,6 +13,7 @@ internal class QueuedTurnRequestBuilder(
         baseMessages: List<ChatMessage> = emptyList(),
         baseSettings: AppSettings,
         providerConfigs: List<LlmProviderConfig>,
+        remoteModelOptions: List<ProviderModelOption> = emptyList(),
     ): SessionTurnRequest? {
         var selection = QueuedTurnSelection()
 
@@ -48,7 +49,8 @@ internal class QueuedTurnRequestBuilder(
                 baseSettings = baseSettings,
                 providerConfigs = providerConfigs,
                 preferredModelKey = selection.selectedModelKey,
-                fallbackModelKey = resolveDefaultChatModelKey(baseSettings, providerConfigs),
+                fallbackModelKey = resolveDefaultChatModelKey(baseSettings, providerConfigs, remoteModelOptions),
+                remoteModelOptions = remoteModelOptions,
             ),
             requestMessages = selection.requestMessages,
             selectedSkillIds = selection.selectedSkillIds,

@@ -494,8 +494,14 @@ private fun AetherAppContent(
     val chromeAvailable = uiState.alpineSetupState.isReady &&
         uiState.settings.alpinePackageProfiles["chrome"]?.installed == true
     val chromeSelected = activeSession?.chromeEnabled ?: uiState.draftChromeEnabled
-    val conversationModelOptions = remember(uiState.providerConfigs) {
-        uiState.providerConfigs.availableModelOptions()
+    // In remote mode the harness host owns the models, so the composer offers
+    // the host's catalog instead of asking for a local provider setup.
+    val conversationModelOptions = remember(
+        uiState.providerConfigs,
+        uiState.remoteModelCatalog,
+        uiState.settings.remoteAgent.isConfigured,
+    ) {
+        uiState.chatModelOptions
     }
     val selectedConversationModelKey = remember(
         activeSession?.selectedModelKey,
@@ -869,6 +875,7 @@ private fun AetherAppContent(
                         onReadClipboardText = { clipboardManager.getText()?.text.orEmpty() },
                         onClose = viewModel::closeOnboarding,
                         onCompleteProviderSetup = viewModel::completeOnboardingProviderSetup,
+                        onCompleteRemoteOnboarding = viewModel::completeRemoteOnboarding,
                         onRequestTermuxPermission = { requestTermuxPermission("onboarding_termux_permission") },
                         onOpenAppPermissions = {
                             startTermuxSetupAction("onboarding_app_permissions") { openAppPermissionSettings(context) }
@@ -1078,6 +1085,7 @@ private fun AetherAppContent(
                     defaultNamingModelKey = uiState.settings.defaultNamingModelKey,
                     defaultCompactingModelKey = uiState.settings.defaultCompactingModelKey,
                     providerConfigs = uiState.providerConfigs,
+                    remoteModelOptions = uiState.remoteModelCatalog.toModelOptions(),
                     usageStatisticsSnapshots = uiState.usageStatisticsSnapshots,
                     scheduledTasks = uiState.scheduledTasks,
                     termuxSetupState = effectiveTermuxSetupState,

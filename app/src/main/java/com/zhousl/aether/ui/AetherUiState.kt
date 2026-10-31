@@ -12,9 +12,12 @@ import com.zhousl.aether.data.McpServerConfig
 import com.zhousl.aether.data.InstalledPiExtension
 import com.zhousl.aether.data.PiExtensionCatalogEntry
 import com.zhousl.aether.data.PiPackageDetails
+import com.zhousl.aether.data.ProviderModelOption
+import com.zhousl.aether.data.RemoteModelCatalog
 import com.zhousl.aether.data.RootSetupState
 import com.zhousl.aether.data.ScheduledTask
 import com.zhousl.aether.data.SessionExecutionState
+import com.zhousl.aether.data.effectiveModelOptions
 import com.zhousl.aether.data.pi.PiCoreSetupState
 import com.zhousl.aether.data.pi.PiProviderAuthState
 import com.zhousl.aether.runtime.AlpineSetupProgress
@@ -301,6 +304,8 @@ data class AetherUiState(
     val mcpServers: List<McpServerConfig> = emptyList(),
     val scheduledTasks: List<ScheduledTask> = emptyList(),
     val providerConfigs: List<LlmProviderConfig> = emptyList(),
+    /** Models the connected remote agent host exposes (remote mode only). */
+    val remoteModelCatalog: RemoteModelCatalog = RemoteModelCatalog(),
     val modelCatalogInfo: Map<String, com.zhousl.aether.data.ModelCatalogInfo> = emptyMap(),
     val thinkingLevelsByProviderModel: Map<String, List<String>> = emptyMap(),
     val thinkingLevelClampsByProviderModel: Map<String, Map<String, String>> = emptyMap(),
@@ -321,3 +326,13 @@ data class AetherUiState(
     val isAuthorizingVirtualDisplay: Boolean = false,
     val appUpdate: AppUpdateUiState = AppUpdateUiState(),
 )
+
+/**
+ * The models the chat may use.
+ *
+ * In remote mode the harness host owns the provider routes and the
+ * credentials, so its catalog replaces the locally configured providers and no
+ * second provider setup is needed on the phone.
+ */
+val AetherUiState.chatModelOptions: List<ProviderModelOption>
+    get() = effectiveModelOptions(settings, providerConfigs, remoteModelCatalog.toModelOptions())

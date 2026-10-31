@@ -199,6 +199,8 @@ fun OnboardingScreen(
     onTestRemoteAgentConfig: (com.zhousl.aether.data.RemoteAgentConfig) -> Unit,
     onReadClipboardText: () -> String,
     onCompleteProviderSetup: (LlmProviderConfig) -> Unit,
+    /** Remote mode owns the providers on the host, so the flow ends here. */
+    onCompleteRemoteOnboarding: () -> Unit,
     onRequestTermuxPermission: () -> Unit,
     onOpenAppPermissions: () -> Unit,
     onOpenTermuxSettings: () -> Unit,
@@ -225,8 +227,19 @@ fun OnboardingScreen(
     val isInitialFlow = initialStep == OnboardingStep.Landing ||
         initialStep == OnboardingStep.RemoteAgent ||
         initialStep == OnboardingStep.ProviderSetup
-    val steps = remember(initialStep) {
-        if (isInitialFlow) InitialOnboardingSteps else FollowUpOnboardingSteps
+    // Remote mode: the agent runs on the harness host, which already has the
+    // providers and the models, so there is no local provider step.
+    val remoteModeActive = remoteAgentConfig.isConfigured
+    val steps = remember(initialStep, remoteModeActive) {
+        if (isInitialFlow) {
+            if (remoteModeActive) {
+                listOf(OnboardingStep.Landing, OnboardingStep.RemoteAgent)
+            } else {
+                InitialOnboardingSteps
+            }
+        } else {
+            FollowUpOnboardingSteps
+        }
     }
 
     fun indexOf(step: OnboardingStep): Int = steps.indexOf(step).coerceAtLeast(0)
@@ -280,7 +293,13 @@ fun OnboardingScreen(
                     // requires `enabled`, which a hand-filled draft never had.
                     val draft = remoteAgentDraft
                     if (draft.serverUrl.isNotBlank() && draft.token.isNotBlank()) {
-                        onSaveRemoteAgentConfig(draft.copy(enabled = true))
+                        val configured = draft.copy(enabled = true)
+                        onSaveRemoteAgentConfig(configured)
+                        // Remote mode: the harness host already owns the
+                        // providers, so skip the local provider setup entirely.
+                        remoteAgentDraft = configured
+                        onCompleteRemoteOnboarding()
+                    } else {
                         currentStep = OnboardingStep.ProviderSetup
                     }
                 },

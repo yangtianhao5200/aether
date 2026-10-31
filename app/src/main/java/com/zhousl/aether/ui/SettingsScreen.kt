@@ -415,6 +415,8 @@ fun SettingsScreen(
     defaultNamingModelKey: String,
     defaultCompactingModelKey: String,
     providerConfigs: List<LlmProviderConfig>,
+    /** Models the harness host exposes; used instead of local ones in remote mode. */
+    remoteModelOptions: List<com.zhousl.aether.data.ProviderModelOption> = emptyList(),
     usageStatisticsSnapshots: List<ChatUsageStatisticsSnapshot>,
     scheduledTasks: List<ScheduledTask>,
     termuxSetupState: TermuxSetupState,
@@ -562,7 +564,15 @@ fun SettingsScreen(
     var defaultNamingModelKeyValue by rememberSaveable { mutableStateOf(defaultNamingModelKey) }
     var defaultCompactingModelKeyValue by rememberSaveable { mutableStateOf(defaultCompactingModelKey) }
 
-    val enabledModelOptions = remember(providerConfigs) { providerConfigs.availableModelOptions() }
+    // Remote mode: the host owns the providers, so list its models instead of
+    // the local ones. The user is never asked to configure a second provider.
+    val enabledModelOptions = remember(providerConfigs, remoteModelOptions, remoteAgentConfig) {
+        if (remoteAgentConfig.isConfigured && remoteModelOptions.isNotEmpty()) {
+            remoteModelOptions
+        } else {
+            providerConfigs.availableModelOptions()
+        }
+    }
 
     // Track which provider is being edited
     var editingProviderId by rememberSaveable { mutableStateOf<String?>(null) }

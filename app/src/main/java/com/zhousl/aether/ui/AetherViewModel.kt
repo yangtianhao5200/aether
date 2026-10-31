@@ -208,6 +208,7 @@ class AetherViewModel(
     private var developerAlpineSetupPreviewJob: Job? = null
     private var piExtensionRefreshGeneration: Long = 0
     private var didRefreshAlpineAfterSettingsLoad = false
+    private var didRefreshDshHostAfterSettingsLoad = false
 
     val uiState: StateFlow<AetherUiState> = _uiState.asStateFlow()
 
@@ -279,6 +280,11 @@ class AetherViewModel(
                     // nor provisioned while the agent runs on a server.
                     if (!settings.remoteAgent.isConfigured) {
                         refreshAlpineSetup(startPiIfReady = false)
+                    } else if (!didRefreshDshHostAfterSettingsLoad) {
+                        // Pull the host's model catalog so the composer offers
+                        // the harness models right after a restart.
+                        didRefreshDshHostAfterSettingsLoad = true
+                        refreshDshHost(force = true)
                     }
                 }
                 if (!didEvaluateStartupUpdateCheck && settings.privacyPolicyAccepted) {
@@ -406,6 +412,14 @@ class AetherViewModel(
                 _uiState.update { current -> current.copy(providerConfigs = configs) }
                 initializeStartupDraftModelIfReady()
                 refreshModelCatalogInfo(configs)
+            }
+        }
+        viewModelScope.launch {
+            // The host's model catalog drives the chat in remote mode, so the
+            // composer never needs a second, locally configured provider.
+            settingsRepository.remoteModelCatalog.collect { catalog ->
+                _uiState.update { current -> current.copy(remoteModelCatalog = catalog) }
+                initializeStartupDraftModelIfReady()
             }
         }
         viewModelScope.launch {
@@ -1475,6 +1489,51 @@ class AetherViewModel(
         closeOnboarding()
     }
 
+    /**
+     * Finishes the initial onboarding for remote mode.
+     *
+     * The agent runs on the harness host, which already owns the providers and
+     * the models, so there is no local provider to configure: the flow ends
+     * right after the remote-agent step.
+     */
+    fun completeRemoteOnboarding() {
+        viewModelScope.launch {
+            settingsRepository.updateOnboardingSeenVersion(CurrentOnboardingVersion)
+            _uiState.update { current ->
+                current.copy(
+                    currentScreen = AppScreen.Chat,
+                    isStartupRouteResolved = true,
+                    isOnboardingReplay = false,
+                    onboardingStep = OnboardingStep.Landing,
+                    onboardingReturnScreen = AppScreen.Chat,
+                    currentSessionId = DraftSessionId,
+                    draftInput = OnboardingStarterPrompt,
+                    draftAttachments = emptyList(),
+                    draftSelectedSkillIds = emptyList(),
+                    draftSelectedMcpServerIds = emptyList(),
+                    draftAgentModeEnabled = false,
+                    draftChromeEnabled = false,
+                    draftWorkspaceId = null,
+                    editingSessionId = null,
+                    editingMessageId = null,
+                    showStarterPromptHint = true,
+                    awaitingFollowUpTour = true,
+                    showFollowUpTourCard = false,
+                )
+            }
+            persistCurrentSessionId(DraftSessionId)
+            // Pull the host's models so the composer offers them immediately.
+            refreshDshHost(force = true)
+            captureAnalyticsEvent(
+                event = "onboarding completed",
+                properties = mapOf(
+                    "section" to "initial",
+                    "provider" to "remote-agent",
+                ),
+            )
+        }
+    }
+
     fun completeOnboardingProviderSetup(config: LlmProviderConfig) {
         viewModelScope.launch {
             val enabledConfig = config.copy(isEnabled = true)
@@ -1709,14 +1768,14 @@ class AetherViewModel(
         if (didInitializeStartupDraftModel) return
         var sessionToPersist: Pair<String, String>? = null
         _uiState.update { current ->
-            val options = current.providerConfigs.availableModelOptions()
+            val options = current.chatModelOptions
             if (
                 !current.isStartupRouteResolved ||
                 !didReceiveInitialChatState ||
                 options.isEmpty()
             ) return@update current
             didInitializeStartupDraftModel = true
-            val defaultModelKey = resolveDefaultChatModelKey(current.settings, current.providerConfigs)
+            val defaultModelKey = resolveDefaultChatModelKey(current.settings, current.providerConfigs, current.remoteModelCatalog.toModelOptions())
             if (current.currentSessionId == DraftSessionId) {
                 current.copy(draftSelectedModelKey = defaultModelKey)
             } else {
@@ -1770,13 +1829,13 @@ class AetherViewModel(
     }
 
     private fun currentConversationModelKey(state: AetherUiState): String {
-        val options = state.providerConfigs.availableModelOptions()
+        val options = state.chatModelOptions
         val selectedKey = state.sessions
             .firstOrNull { it.id == state.currentSessionId }
             ?.selectedModelKey
             ?: state.draftSelectedModelKey
         return selectedKey.takeIf { key -> options.any { it.key == key } }
-            ?: resolveDefaultChatModelKey(state.settings, state.providerConfigs)
+            ?: resolveDefaultChatModelKey(state.settings, state.providerConfigs, state.remoteModelCatalog.toModelOptions())
     }
 
     fun selectSession(sessionId: String) {
@@ -2074,7 +2133,7 @@ class AetherViewModel(
                 draftAttachments = message.attachments.map(::normalizeDraftAttachmentForEditing),
                 draftSelectedModelKey = if (sessionId == DraftSessionId) {
                     it.draftSelectedModelKey.ifBlank {
-                        resolveDefaultChatModelKey(it.settings, it.providerConfigs)
+                        resolveDefaultChatModelKey(it.settings, it.providerConfigs, it.remoteModelCatalog.toModelOptions())
                     }
                 } else {
                     it.draftSelectedModelKey
@@ -2095,7 +2154,7 @@ class AetherViewModel(
                 draftAttachments = emptyList(),
                 draftSelectedModelKey = if (it.currentSessionId == DraftSessionId) {
                     it.draftSelectedModelKey.ifBlank {
-                        resolveDefaultChatModelKey(it.settings, it.providerConfigs)
+                        resolveDefaultChatModelKey(it.settings, it.providerConfigs, it.remoteModelCatalog.toModelOptions())
                     }
                 } else {
                     it.draftSelectedModelKey
@@ -2291,7 +2350,8 @@ class AetherViewModel(
                     baseSettings = snapshot.settings,
                     providerConfigs = snapshot.providerConfigs,
                     preferredModelKey = updatedSession.selectedModelKey,
-                    fallbackModelKey = resolveDefaultChatModelKey(snapshot.settings, snapshot.providerConfigs),
+                    fallbackModelKey = resolveDefaultChatModelKey(snapshot.settings, snapshot.providerConfigs, snapshot.remoteModelCatalog.toModelOptions()),
+                    remoteModelOptions = snapshot.remoteModelCatalog.toModelOptions(),
                 ),
                 requestMessages = updatedSession.messages,
                 forkPiSession = true,
@@ -2380,6 +2440,7 @@ class AetherViewModel(
                 val host = org.json.JSONObject(client.dshHostInfoJson())
                 val pluginsJson = runCatching { client.dshPluginsJson() }
                     .getOrNull()?.let { org.json.JSONObject(it) }
+                val providers = parseDshProviders(pluginsJson)
                 _dshHost.value = DshHostUiState(
                     loaded = true,
                     isLoading = false,
@@ -2389,8 +2450,15 @@ class AetherViewModel(
                     dshVersion = host.optString("dsh_version"),
                     managementAvailable = host.optBoolean("management", false),
                     plugins = parseDshPlugins(pluginsJson),
-                    providers = parseDshProviders(pluginsJson),
+                    providers = providers,
                 )
+                // Remember the host's models so the chat can use them (and so
+                // they survive a restart) instead of asking for a local model.
+                if (providers.isNotEmpty()) {
+                    settingsRepository.saveRemoteModelCatalog(
+                        providers.toRemoteModelCatalog(),
+                    )
+                }
             } catch (error: Throwable) {
                 _dshHost.value = _dshHost.value.copy(
                     isLoading = false,
@@ -2717,7 +2785,7 @@ class AetherViewModel(
     ) {
         setCurrentChatModelSelection(modelKey)
         val current = _uiState.value
-        val option = current.providerConfigs.availableModelOptions()
+        val option = current.chatModelOptions
             .firstOrNull { it.key == modelKey }
             ?: return onResolved(false)
         val cacheKey = thinkingCatalogKey(option.piProviderId, option.modelId)
@@ -2739,8 +2807,8 @@ class AetherViewModel(
             ?.selectedModelKey
             ?.takeIf(String::isNotBlank)
             ?: current.draftSelectedModelKey.takeIf(String::isNotBlank)
-            ?: resolveDefaultChatModelKey(current.settings, current.providerConfigs)
-        val option = current.providerConfigs.availableModelOptions()
+            ?: resolveDefaultChatModelKey(current.settings, current.providerConfigs, current.remoteModelCatalog.toModelOptions())
+        val option = current.chatModelOptions
             .firstOrNull { it.key == selectedModelKey }
             ?: return
         viewModelScope.launch {
@@ -4313,7 +4381,7 @@ class AetherViewModel(
                         title = "New chat",
                         hasCustomTitle = true,
                         selectedModelKey = current.draftSelectedModelKey.ifBlank {
-                            resolveDefaultChatModelKey(current.settings, current.providerConfigs)
+                            resolveDefaultChatModelKey(current.settings, current.providerConfigs, current.remoteModelCatalog.toModelOptions())
                         },
                         selectedSkillIds = current.draftSelectedSkillIds,
                         activeMcpServerIds = current.draftSelectedMcpServerIds,
@@ -4339,7 +4407,8 @@ class AetherViewModel(
                     baseSettings = current.settings,
                     providerConfigs = current.providerConfigs,
                     preferredModelKey = requestModelKey,
-                    fallbackModelKey = resolveDefaultChatModelKey(current.settings, current.providerConfigs),
+                    fallbackModelKey = resolveDefaultChatModelKey(current.settings, current.providerConfigs, current.remoteModelCatalog.toModelOptions()),
+                    remoteModelOptions = current.remoteModelCatalog.toModelOptions(),
                 ),
                 requestMessages = requestMessages,
                 forkPiSession = isEditingExistingMessage,
@@ -4942,7 +5011,8 @@ class AetherViewModel(
                 baseSettings = snapshot.settings,
                 providerConfigs = snapshot.providerConfigs,
                 preferredModelKey = session.selectedModelKey,
-                fallbackModelKey = resolveDefaultChatModelKey(snapshot.settings, snapshot.providerConfigs),
+                fallbackModelKey = resolveDefaultChatModelKey(snapshot.settings, snapshot.providerConfigs, snapshot.remoteModelCatalog.toModelOptions()),
+                remoteModelOptions = snapshot.remoteModelCatalog.toModelOptions(),
             ),
             requestMessages = session.messages + userMessage,
             selectedSkillIds = session.selectedSkillIds,
@@ -5347,7 +5417,9 @@ class AetherViewModel(
         seedMessage: ChatMessage,
         settings: AppSettings,
     ) {
-                if (!settings.isProviderSetupValid()) {
+        // Remote mode: the harness host owns the providers, so there is no
+        // local provider to validate before asking it for a title.
+        if (!settings.remoteAgent.isConfigured && !settings.isProviderSetupValid()) {
             return
         }
 
@@ -5356,11 +5428,13 @@ class AetherViewModel(
 
         viewModelScope.launch {
             val providerConfigs = _uiState.value.providerConfigs
+            val remoteModelOptions = _uiState.value.remoteModelCatalog.toModelOptions()
             val titleSettings = resolveModelSettings(
                 baseSettings = settings,
                 providerConfigs = providerConfigs,
-                preferredModelKey = resolveDefaultTitleModelKey(settings, providerConfigs),
-                fallbackModelKey = resolveDefaultChatModelKey(settings, providerConfigs),
+                preferredModelKey = resolveDefaultTitleModelKey(settings, providerConfigs, remoteModelOptions),
+                fallbackModelKey = resolveDefaultChatModelKey(settings, providerConfigs, remoteModelOptions),
+                remoteModelOptions = remoteModelOptions,
             )
             val modelKey = thinkingCatalogKey(titleSettings.piProviderId, titleSettings.modelId)
             val thinkingLevelMap = _uiState.value.thinkingLevelClampsByProviderModel[modelKey].orEmpty()
