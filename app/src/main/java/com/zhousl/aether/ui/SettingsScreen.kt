@@ -5098,7 +5098,7 @@ private fun RemoteAgentSettingsPage(
     var dshToken by remember(config) {
         mutableStateOf(TextFieldValue(config.dshAccessToken))
     }
-    var useNativeChat by remember(config) { mutableStateOf(config.useNativeDshChat) }
+
 
     fun current(): com.zhousl.aether.data.RemoteAgentConfig = config.copy(
         // Remote is the only mode: a usable address and token are the opt-in.
@@ -5109,7 +5109,6 @@ private fun RemoteAgentSettingsPage(
         autoReconnect = autoReconnect,
         dshAccessToken = dshToken.text.trim()
             .ifBlank { com.zhousl.aether.data.DefaultDshAccessToken },
-        useNativeDshChat = useNativeChat,
     )
 
     SubPageScaffold(title = "远程 Agent", onBack = onBack) {
@@ -5181,13 +5180,6 @@ private fun RemoteAgentSettingsPage(
                     subtitle = "网络切换或服务器重启后自动恢复",
                     checked = autoReconnect,
                     onCheckedChange = { autoReconnect = it },
-                )
-                CardDivider()
-                SettingsToggleRow(
-                    title = "云端会话（推荐）",
-                    subtitle = "对话在服务器的 DSH 会话里运行，手机可随时断开再连回同一会话；关闭则使用实时桥接通道。",
-                    checked = useNativeChat,
-                    onCheckedChange = { useNativeChat = it },
                 )
             }
         }

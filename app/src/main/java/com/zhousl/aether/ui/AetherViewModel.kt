@@ -218,14 +218,6 @@ class AetherViewModel(
         _remoteAgentStatus.asStateFlow()
 
     /** DeepSeek Harness host facts: plugins, provider routes, CLI version. */
-    /**
-     * The DSH-native conversation (remote mode): prompts and streams go
-     * straight to the harness session, so the turn runs on the server.
-     */
-    val dshChatController: com.zhousl.aether.runtime.remote.DshChatController by lazy {
-        com.zhousl.aether.runtime.remote.DshChatController(runtime.remoteAgentHost)
-    }
-
     private val _dshHost = MutableStateFlow(DshHostUiState())
     val dshHost: StateFlow<DshHostUiState> = _dshHost.asStateFlow()
     val transientMessages = _transientMessages.asSharedFlow()

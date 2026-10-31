@@ -918,13 +918,7 @@ private fun AetherAppContent(
                         target = AetherExtensionComponentChatScreen,
                         modifier = Modifier.fillMaxSize(),
                     ) {
-                        if (uiState.settings.remoteAgent.isConfigured &&
-                            uiState.settings.remoteAgent.useNativeDshChat
-                        ) {
-                            // Native mode: the harness owns the conversation and
-                            // the phone is a thin send/receive client.
-                            DshChatScreen(controller = viewModel.dshChatController)
-                        } else if (uiState.settings.remoteAgent.isConfigured) {
+                        if (uiState.settings.remoteAgent.isConfigured) {
                         ConversationScreen(
                     conversationStateKey = uiState.currentSessionId,
                     messages = currentMessages,

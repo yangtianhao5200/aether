@@ -26,12 +26,6 @@ data class RemoteAgentConfig(
      * configured token. A blank value keeps the server default.
      */
     val dshAccessToken: String = DefaultDshAccessToken,
-    /**
-     * Use the harness's own conversation (native sessions) instead of the
-     * realtime bridge. Native mode keeps the turn server-side and lets the
-     * phone disconnect and reconnect to the same session.
-     */
-    val useNativeDshChat: Boolean = true,
 ) {
     val isConfigured: Boolean
         get() = enabled && serverUrl.trim().isNotEmpty() && token.trim().isNotEmpty()

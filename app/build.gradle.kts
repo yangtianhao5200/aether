@@ -38,6 +38,10 @@ val nightlyKeystoreFile = localOrEnv("nightly.storeFile", "NIGHTLY_KEYSTORE_FILE
 val nightlyKeystorePassword = localOrEnv("nightly.storePassword", "NIGHTLY_KEYSTORE_PASSWORD")
 val nightlyKeyAlias = localOrEnv("nightly.keyAlias", "NIGHTLY_KEY_ALIAS")
 val nightlyKeyPassword = localOrEnv("nightly.keyPassword", "NIGHTLY_KEY_PASSWORD")
+val releaseKeystoreFile = localOrEnv("release.storeFile", "RELEASE_KEYSTORE_FILE")
+val releaseKeystorePassword = localOrEnv("release.storePassword", "RELEASE_KEYSTORE_PASSWORD")
+val releaseKeyAlias = localOrEnv("release.keyAlias", "RELEASE_KEY_ALIAS")
+val releaseKeyPassword = localOrEnv("release.keyPassword", "RELEASE_KEY_PASSWORD")
 val appVersionName = providers.gradleProperty("aether.versionName")
     .orNull
     ?.trim()
@@ -135,6 +139,28 @@ android {
     }
 
     signingConfigs {
+        // A real release key when the CI secrets are present; otherwise the
+        // debug key, so CI can always attach a signed, installable APK.
+        create("release") {
+            if (
+                releaseKeystoreFile.isNotBlank() &&
+                releaseKeystorePassword.isNotBlank() &&
+                releaseKeyAlias.isNotBlank() &&
+                releaseKeyPassword.isNotBlank()
+            ) {
+                storeFile = file(releaseKeystoreFile)
+                storePassword = releaseKeystorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            } else {
+                // Reuse the auto-generated debug key so CI still signs.
+                val debugConfig = signingConfigs.getByName("debug")
+                storeFile = debugConfig.storeFile
+                storePassword = debugConfig.storePassword
+                keyAlias = debugConfig.keyAlias
+                keyPassword = debugConfig.keyPassword
+            }
+        }
         create("nightly") {
             if (
                 nightlyKeystoreFile.isNotBlank() &&
@@ -172,6 +198,7 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+            signingConfig = signingConfigs.getByName("release")
             manifestPlaceholders["appIcon"] = "@mipmap/ic_launcher"
             manifestPlaceholders["appRoundIcon"] = "@mipmap/ic_launcher_round"
             manifestPlaceholders["appLabel"] = "@string/app_name"
