@@ -105,7 +105,7 @@ jobs:
     needs: changes
     if: ${{ needs.changes.outputs.android == 'true' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -140,16 +140,16 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: Test shared and Android code
-        run: ./gradlew :shared:testDebugUnitTest :app:testDebugUnitTest --stacktrace
+        run: ./gradlew :shared:testReleaseUnitTest :app:testReleaseUnitTest --stacktrace
 
-      - name: Build debug APK
-        run: ./gradlew :app:assembleDebug --stacktrace
+      - name: Build release APK
+        run: ./gradlew :app:assembleRelease --stacktrace
 
-      - name: Upload debug APK
+      - name: Upload release APK
         uses: actions/upload-artifact@v7
         with:
-          name: Aether-pr-debug-${{ github.event.pull_request.head.sha || github.sha }}
-          path: app/build/outputs/apk/debug/*.apk
+          name: Aether-pr-release-${{ github.event.pull_request.head.sha || github.sha }}
+          path: app/build/outputs/apk/release/*.apk
           retention-days: 7
           archive: false
 
